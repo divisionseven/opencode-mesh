@@ -348,6 +348,8 @@ Every message travels over loopback (`127.0.0.1`). The transport path depends on
 
 Lockfile `package-lock.json` ships at root, ranges stay caret (no pins) so compatible host upgrades work. Dev-only `typescript`, `vitest`, `tsx`, `@types/node` never reach the tarball (`package.json` `files`: `dist`, `LICENSE`, `README.md`, `CHANGELOG.md`, `skills`).
 
+[See Visual Dependency Graph →][npm-dep-graph]
+
 [See Current Dependency List →][package-json]
 
 ## Contributing
@@ -466,8 +468,8 @@ and community contributions.
 
 [gh-sponsors-badge]: https://img.shields.io/badge/GitHub%20Sponsors-Donate-green?logo=githubsponsors
 [buymeacoffee-badge-icon]: https://img.shields.io/badge/BuyMeACoffee-Donate-green?logo=buymeacoffee
-[gh-issues-badge]: https://img.shields.io/github/issues/divisionseven/opencode-mesh?logo=github&label=Issues
-[gh-discussions-badge-icon]: https://img.shields.io/github/discussions/divisionseven/opencode-mesh?logo=github&label=Discussions
+[gh-issues-badge]: https://img.shields.io/github/issues/divisionseven/opencode-mesh?logo=github&label=Issues&logoColor=white&color=0D0D0D
+[gh-discussions-badge-icon]: https://img.shields.io/github/discussions/divisionseven/opencode-mesh?logo=github&logoColor=white&label=Discussions&color=0D0D0D
 
 <!-- Body Badge Links -->
 
@@ -478,6 +480,7 @@ and community contributions.
 
 <!-- Dependencies: npm Links -->
 
+[npm-dep-graph]: https://npmgraph.js.org/?q=opencode-mesh
 [dep-plugin]: https://www.npmjs.com/package/@opencode-ai/plugin
 [dep-sdk]: https://www.npmjs.com/package/@opencode-ai/sdk
 
