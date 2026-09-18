@@ -15,9 +15,9 @@
 [![License][badge-license]][link-license]
 [![Node][badge-node]][link-repo]
 [![opencode][badge-opencode]][opencode-repo]
-[![npm][badge-npm-downloads]][link-npm]
 [![Coverage][badge-coverage]][link-coverage]
 [![Build][badge-build]][link-ci]
+<!-- [![npm][badge-npm-downloads]][link-npm] -->
 
 [Docs][docs-index] • [Install](#installation) • [Changelog][docs-changelog] • [OpenCode][link-opencode] • [Sponsor][gh-sponsors-link]
 
@@ -445,7 +445,7 @@ and community contributions.
 [badge-node]: https://img.shields.io/badge/node-%3E%3D22-brightgreen?logo=node.js&logoColor=white&label=Node&color=0D0D0D
 [badge-opencode]: https://img.shields.io/badge/opencode-%3E%3D1.3.13-blue?logo=opencode&logoColor=white&label=OpenCode&color=0D0D0D
 [badge-build]: https://img.shields.io/github/actions/workflow/status/divisionseven/opencode-mesh/ci.yml?logo=github&logoColor=white&label=Build&color=0D0D0D
-[badge-npm-downloads]: https://img.shields.io/npm/dm/opencode-mesh?logo=npm&logoColor=white&label=Downloads&color=0D0D0D
+<!-- [badge-npm-downloads]: https://img.shields.io/npm/dm/opencode-mesh?logo=npm&logoColor=white&label=Downloads&color=0D0D0D -->
 [badge-coverage]: https://img.shields.io/codecov/c/github/divisionseven/opencode-mesh?logo=codecov&logoColor=white&label=Coverage&color=0D0D0D
 
 <!-- Header Badge Links -->
@@ -454,7 +454,7 @@ and community contributions.
 [link-license]: LICENSE
 [link-repo]: https://github.com/divisionseven/opencode-mesh
 [link-ci]: https://github.com/divisionseven/opencode-mesh/actions/workflows/ci.yml
-[link-npm]: https://www.npmjs.com/package/opencode-mesh
+<!-- [link-npm]: https://www.npmjs.com/package/opencode-mesh -->
 [link-coverage]: https://codecov.io/gh/divisionseven/opencode-mesh
 [link-opencode]: https://opencode.ai
 
