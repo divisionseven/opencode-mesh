@@ -81,11 +81,11 @@ jobs:
         with:
           # Full history for release-notes git reads (prev-tag plus commit range).
           fetch-depth: 0
-      - name: Setup Node 22
+      - name: Setup Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
       - name: Install dependencies
         run: npm ci
@@ -139,13 +139,10 @@ jobs:
             exit 1
           fi
           echo "IDEMPOTENCY_OK: no existing release or npm version for $GITHUB_REF_NAME"
-      # Trusted-publishing ready (id-token plus provenance); keep NPM_TOKEN
-      # until the npm package role is bound, then drop NODE_AUTH_TOKEN in a follow-up.
+      # npm trusted publishing (OIDC): token minted via id-token:write, provenance automatic.
       - name: Publish to npm
         if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public ./dist-tgz/*.tgz
+        run: npm publish --access public ./dist-tgz/*.tgz
       - name: Render release body
         run: |
           PRERELEASE_ARGS=()
