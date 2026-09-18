@@ -9,17 +9,17 @@
 
 # OpenCode-Mesh
 
-#### The free OpenCode plugin that allows your agents to communicate directly with any running session on your machine. Separate projects, separate terminals, separate agents, separate models... now one connected team.
+#### The free OpenCode plugin that lets your agents communicate directly with any session on your machine. Separate projects, separate terminals, separate models. One connected team.
 
 [![Release][badge-release]][link-releases]
-[![npm][badge-npm]][link-npm]
 [![License][badge-license]][link-license]
 [![Node][badge-node]][link-repo]
-[![opencode][badge-opencode]][link-opencode]
+[![opencode][badge-opencode]][opencode-repo]
+[![npm][badge-npm-downloads]][link-npm]
 [![Coverage][badge-coverage]][link-coverage]
 [![Build][badge-build]][link-ci]
 
-[Documentation][docs-index] • [Install](#installation) • [Changelog][docs-changelog] • [OpenCode][opencode-repo] • [Sponsor][gh-sponsors-link]
+[Docs][docs-index] • [Install](#installation) • [Changelog][docs-changelog] • [OpenCode][link-opencode] • [Sponsor][gh-sponsors-link]
 
 <a href="docs/assets/demo/MESH_MESSAGE_DEMO.png"><img src="docs/assets/demo/MESH_MESSAGE_DEMO.png" alt="OpenCode-Mesh Demo | An agent using the mesh network to get a quick status update from a separate team working in a different directory on the machine" width="900" /></a>
 
@@ -28,7 +28,7 @@
 ## Highlights
 
 > **TL;DR**
-> Any [OpenCode][link-opencode] session can now message any other session on your machine (TUI, GUI, Web, Headless) Auto-discovery and real-time status updates, messages sent by exact ID, answered with a read-receipt. No daemon to run, no loops to wire up. The OpenCode server handles all the delivery natively, the same way it routes a user message.
+> Any [OpenCode][link-opencode] session can now message any other session on your machine (TUI, GUI, Web, Headless). Auto-discovery and real-time status updates, messages sent by exact ID, answered with a read-receipt. No daemon to run, no loops to manage. The OpenCode server handles all the delivery natively, the same way it routes a user message.
 
 **No daemons, no loops, no bloat, no confusing setup, nothing for you to manage or maintain. Just start messaging.**
 
@@ -87,7 +87,7 @@ flowchart TD
 
 </div>
 
-Keep one orchestrator session open and let it run the day for you. Tell it the outcome you want in plain language. It finds each manager with `mesh_peers` and assigns work with `mesh_send`. Each manager wakes its own subagents (builder plus build-reviewer plus tester, researcher plus builder plus tester, or researcher plus documentation-updater plus retrospective) inside its own repo and sends back a receipt-tracked reply. Mesh messages wake the next session when action is needed and stay silent when you only want to drop something in the chat history for context. You replace overcomplicated loops with simple messages and keep delegation moving around the clock.
+Keep one orchestrator session open and let it run the day for you. Tell it the outcome you want in plain language. It finds each manager with `mesh_peers` and assigns work with `mesh_send`. Each manager wakes and delegates to its own subagents inside its own repo and sends back a receipt-tracked reply. Mesh messages wake the next session when action is needed and stay silent when you only want to drop something in the chat history for context. You replace overcomplicated loops with simple messages and keep delegation moving around the clock.
 
 </details>
 
@@ -155,14 +155,14 @@ opencode --version
 ### From OpenCode (recommended)
 
 ```bash
-# requires opencode 1.3.4+, < 2.0.0
+# requires opencode 1.3.13+, < 2.0.0
 opencode plugin opencode-mesh --global
 ```
 
 Registers the plugin globally and auto-loads the bundled agent skill on
 next start. Project-local instead: omit `--global`.
 
-### From npx (fallback for older opencode versions)
+### From npx (fallback)
 
 ```bash
 # preview the install process with the `--dry-run` flag
@@ -439,11 +439,11 @@ and community contributions.
 <!-- Header Badge Icons -->
 
 [badge-release]: https://img.shields.io/github/v/release/divisionseven/opencode-mesh?logo=git&logoColor=white&label=Release&color=0D0D0D
-[badge-license]: https://img.shields.io/badge/License-MIT-yellow.svg?logo=apache&logoColor=white&label=License&color=0D0D0D
+[badge-license]: https://img.shields.io/badge/License-MIT-yellow.svg?logo=open-source-initiative&logoColor=white&label=License&color=0D0D0D
 [badge-node]: https://img.shields.io/badge/node-%3E%3D22-brightgreen?logo=node.js&logoColor=white&label=Node&color=0D0D0D
 [badge-opencode]: https://img.shields.io/badge/opencode-%3E%3D1.3.13-blue?logo=opencode&logoColor=white&label=OpenCode&color=0D0D0D
 [badge-build]: https://img.shields.io/github/actions/workflow/status/divisionseven/opencode-mesh/ci.yml?logo=github&logoColor=white&label=Build&color=0D0D0D
-[badge-npm]: https://img.shields.io/npm/v/opencode-mesh?logo=npm&logoColor=white&label=npm&color=0D0D0D
+[badge-npm-downloads]: https://img.shields.io/npm/dm/opencode-mesh?logo=npm&logoColor=white&label=Downloads&color=0D0D0D
 [badge-coverage]: https://img.shields.io/codecov/c/github/divisionseven/opencode-mesh?logo=codecov&logoColor=white&label=Coverage&color=0D0D0D
 
 <!-- Header Badge Links -->
