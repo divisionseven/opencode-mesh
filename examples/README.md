@@ -3,8 +3,8 @@
 | File            | Purpose                          | Run                                                                | Verifies                                                                               |
 | --------------- | -------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | `quickstart.ts` | Runnable tutorial `<30s`         | `OPENCODE_MESH_ROOT=/tmp/mesh-test npx tsx examples/quickstart.ts` | `{ peers: {...} }` object plus `{ok:true, via:"admitted"/"queued", target, title, id}` |
-| `status-jq.sh`  | One field out of `status --json` | `zsh examples/status-jq.sh port`                                   | `port` object prints, exit 0                                                           |
-| `enum-ports.sh` | Peers across sibling servers     | `MESH_ENUM_PORTS=4097,4098 zsh examples/enum-ports.sh`             | peer union JSON prints, exit 0                                                         |
+| `status-jq.sh`  | One field out of `status --json` | `bash examples/status-jq.sh port`                                  | `port` object prints, exit 0                                                           |
+| `enum-ports.sh` | Peers across sibling servers     | `MESH_ENUM_PORTS=4097,4098 bash examples/enum-ports.sh`            | peer union JSON prints, exit 0                                                         |
 
 `quickstart.ts` is the Diátaxis Tutorial code proof for `docs/getting-started.md`.
 

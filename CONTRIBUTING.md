@@ -13,7 +13,7 @@ Thank you for contributing! This guide is the funnel from clone to merged PR.
 
 ## Setup
 
-Prerequisites: Node `>=22`, opencode `>=1.3.13`, `zsh`, `python3`.
+Prerequisites: Node `>=22`, opencode `>=1.3.13`, `bash`, `rg` (ripgrep), `python3`.
 
 ```bash
 git clone https://github.com/divisionseven/opencode-mesh.git
@@ -27,7 +27,7 @@ Verify the toolchain once (see [Test gates](#test-gates) for what green means):
 ```bash
 npm run typecheck
 npm test
-zsh scripts/verify-mesh-harness.sh
+bash scripts/verify-mesh-harness.sh
 ```
 
 ## Structure map
@@ -71,7 +71,7 @@ Comment-only edits welcome anywhere; behavior edits need a gate (see below).
 3. Make changes with Conventional Commits (see [Commit format](#commit-format)).
 4. Run checks locally before pushing:
    ```bash
-   npm run typecheck && npm test && zsh scripts/verify-mesh-harness.sh
+   npm run typecheck && npm test && bash scripts/verify-mesh-harness.sh
    ```
     Questions? See [Support](README.md#support--community).
 5. Push `git push origin feat/amazing` and open a Pull Request against `main`.
@@ -98,7 +98,7 @@ per doc file and verify every `rg` gate you quote.
   em dashes; audit with quoted sentences, not impressions.
 - `_private` prefix means private; the re-export surface
   (`dist/plugin/opencode-mesh.js`) never widens without a plan.
-- Shell: `zsh -n scripts/*.sh` clean; Python helpers: `python3 -m py_compile scripts/*.py` clean.
+- Shell: `bash -n scripts/*.sh` clean; Python helpers: `python3 -m py_compile scripts/*.py` clean.
 - Exit codes stay `{0, 1, 2}` (`bin/cli.js` dispatch); new failure modes ride
   typed `MeshError` codes in `src/errors.ts`, never ad-hoc strings.
 - Line length: 100 characters max.
@@ -112,7 +112,7 @@ rerun or strike the claim.
 
 - Suite green is `npm test` (config owns the isolated single-fork pool) with all
   files passing (rerun isolated when wall-clock flakes under load).
-- Harness green is `zsh scripts/verify-mesh-harness.sh` ending `HARNESS_DONE`
+- Harness green is `bash scripts/verify-mesh-harness.sh` ending `HARNESS_DONE`
   with `FAIL=0` (probe count owned by the script).
 - Pack green is `npm pack --dry-run` with `dist/plugin/opencode-mesh.js` exactly
   once and `dist/index.js`, `dist/src`, `docs/`, `plugin/*.ts` zero times.
@@ -141,7 +141,7 @@ Conventional Commits, lowercase scope optional:
 
 The PR template checklist enforces: typecheck 0 errors, suite green (isolated),
 coverage measured (`npm run coverage` percentages pasted),
-`zsh -n` plus `py_compile` clean, pack gates (`dist/plugin/opencode-mesh.js` →1,
+`bash -n` plus `py_compile` clean, pack gates (`dist/plugin/opencode-mesh.js` →1,
 leaks →0), `TODO(PUBLISH` →0, quickstart proof `<30s`. Docs PRs update the
 changelog; behavior PRs update the affected reference table.
 

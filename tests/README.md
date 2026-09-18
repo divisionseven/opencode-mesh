@@ -12,7 +12,7 @@ Shared helpers live in `tests/fixtures/`.
 ```bash
 npx vitest run --pool=forks --poolOptions.forks.singleFork  # isolated, one fork
 npm run coverage  # enforcing 90% floor (lines/branches/functions/statements)
-zsh scripts/verify-mesh-harness.sh  # 6 probed PASS
+bash scripts/verify-mesh-harness.sh  # 6 probed PASS
 npx tsc --noEmit && npx tsc -p tsconfig.plugin.json --noEmit && npx tsc -p tsconfig.tests.json --noEmit  # triple tsc, 0 errors
 ```
 

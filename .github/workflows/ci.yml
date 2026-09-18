@@ -8,10 +8,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         node-version: [22, 24]
     steps:
@@ -24,13 +30,26 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep && rg --version && command -v rg
       - name: TODO(PUBLISH) gate
-        shell: zsh
-        run: scripts/check-todo-publish.sh
+        run: bash scripts/check-todo-publish.sh
       - name: SPDX banner gate
         run: scripts/check-spdx.sh && echo SPDX_OK
+      - name: Console census
+        run: bash scripts/check-console.sh
+      - name: Trash policy
+        run: bash scripts/check-trash.sh
+      - name: Version parity
+        run: bash scripts/check-version-parity.sh
+      - name: SQLite edges
+        run: bash scripts/check-sqlite-edges.sh
       - name: gen-version
-        run: node scripts/gen-version.js && cat src/version.ts | rg -c VERSION
+        run: 'node scripts/gen-version.js && test "$(rg -c VERSION src/version.ts || echo 0)" -ge 1 || (echo "version gate: VERSION count 0" && exit 1)'
+      - name: Build
+        run: npm run build
+      - name: Assert dist entry
+        run: 'test -s dist/plugin/opencode-mesh.js || (echo "build gate: dist/plugin/opencode-mesh.js missing" && exit 1)'
       - name: publint
         run: npx --yes publint --strict
       - name: pack gates
@@ -56,19 +75,22 @@ jobs:
           disable_search: true
           fail_ci_if_error: true
           verbose: true
-      - name: Harness zsh -n
-        run: zsh -n scripts/*.sh && echo zsh_ok
+      - name: Harness bash -n
+        run: bash -n scripts/*.sh && echo bash_ok
       - name: Secret scan
         shell: bash
         run: |
           set -o pipefail
-          ! rg -n --no-ignore -g '!package-lock.json' "BEGIN .*PRIVATE KEY|ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[bap]-[A-Za-z0-9-]{8,}|sk-live-[A-Za-z0-9]{8,}|AKIA[0-9A-Z]{16}" src plugin bin docs examples skills/opencode-mesh/SKILL.md README.md ARCHITECTURE.md 2>/dev/null | grep -q . && echo SECRETS_OK || (echo "secret shape blocks merge" && exit 1)
+          command -v rg >/dev/null 2>&1 || { echo "secret scan: rg not found" >&2; exit 1; }
+          ! rg -q -n --no-ignore -g '!package-lock.json' "BEGIN .*PRIVATE KEY|ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[bap]-[A-Za-z0-9-]{8,}|sk-live-[A-Za-z0-9]{8,}|AKIA[0-9A-Z]{16}" src plugin bin docs examples skills/opencode-mesh/SKILL.md README.md ARCHITECTURE.md 2>/dev/null && echo SECRETS_OK || (echo "secret shape blocks merge" && exit 1)
       - name: Stat perms
-        run: stat -f %OLp scripts/verify-mesh-harness.sh 2>/dev/null || stat -c %a scripts/verify-mesh-harness.sh
+        run: test -x scripts/verify-mesh-harness.sh && (stat -f %OLp scripts/verify-mesh-harness.sh 2>/dev/null || stat -c %a scripts/verify-mesh-harness.sh) && echo PERMS_OK
       - name: py_compile
         run: if ls scripts/*.py >/dev/null 2>&1; then python3 -m py_compile scripts/*.py && echo py_ok; else echo py_no_files_ok; fi
       - name: p99 histogram
-        run: npm test -- --reporter=json | tee p99.json; echo "p99>100ms"
+        run: |
+          npm test -- --reporter=json | tee p99.json
+          node -e "const fs=require('fs');const raw=fs.readFileSync('p99.json','utf8');const s=raw.indexOf('{');const e=raw.lastIndexOf('}');if(s<0||e<=s){console.error('p99 gate: no JSON object in p99.json');process.exit(1)}JSON.parse(raw.slice(s,e+1));console.log('P99_PARSED')" && test -s p99.json && echo P99_OK
       - name: Upload p99
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
