@@ -1,0 +1,95 @@
+name: 🚀 Feature Request
+description: Suggest a new feature or enhancement for OpenCode-Mesh.
+title: "feat: "
+labels: ["enhancement", "status: needs-triage"]
+assignees:
+  - divisionseven
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please fill out this form as completely as possible.
+        For general discussion or early-stage ideas, consider starting a [Discussion](https://github.com/divisionseven/opencode-mesh/discussions) first.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Pre-flight Checklist
+      options:
+        - label: I have searched existing issues and this has not been requested before.
+          required: true
+        - label: I have checked the [ROADMAP](ROADMAP.md) / project board to see if this is already planned.
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature Area
+      description: Which part of OpenCode-Mesh does this relate to?
+      options:
+        - Mesh Plugin / Transport
+        - CLI / UX
+        - CI/CD Integration
+        - Configuration System
+        - Lock File Auditing
+        - Dependency Management
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: >
+        Describe the problem or limitation you're experiencing. Why is this a problem for you?
+        Good feature requests start with a clear problem, not just a solution.
+      placeholder: "As a developer who uses OpenCode-Mesh in CI, I find it difficult to ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like. What would this look like in practice?
+      placeholder: |
+        I'd like `mesh` to support ...
+
+        Example usage:
+        ```
+        mesh install --flag value
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds? Why are they insufficient?
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority (your assessment)
+      options:
+        - "Nice to have"
+        - "Would significantly improve my workflow"
+        - "Blocking my adoption of OpenCode-Mesh"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I would be willing to submit a pull request implementing this feature.
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Screenshots, links, related issues, prior art from other tools, etc.

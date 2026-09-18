@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "verbatimModuleSyntax": false
+  },
+  "include": ["plugin/**/*.ts"],
+  "exclude": ["node_modules", "dist", "tests", "scripts", "plugin/test-seam.ts"]
+}

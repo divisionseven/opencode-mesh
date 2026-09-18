@@ -1,0 +1,16 @@
+{
+  "plants": [
+    {
+      "id": "ses-plant-attach",
+      "note": "attached target outside the queried directory"
+    },
+    { "id": "ses-plant-exact", "note": "exact directory match target" },
+    {
+      "id": "ses-plant-agent",
+      "note": "agent match target inside directory order"
+    },
+    { "id": "ses-plant-recent", "note": "recency target" },
+    { "id": "ses-plant-title", "note": "title confirmation target" }
+  ],
+  "scale": { "total": 3000, "fillerPrefix": "ses-fill-" }
+}

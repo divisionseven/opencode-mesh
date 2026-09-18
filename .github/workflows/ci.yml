@@ -1,0 +1,76 @@
+name: ♻️ CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node ${{ matrix.node-version }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: TODO(PUBLISH) gate
+        shell: zsh
+        run: scripts/check-todo-publish.sh
+      - name: SPDX banner gate
+        run: scripts/check-spdx.sh && echo SPDX_OK
+      - name: gen-version
+        run: node scripts/gen-version.js && cat src/version.ts | rg -c VERSION
+      - name: publint
+        run: npx --yes publint --strict
+      - name: pack gates
+        run: |
+          test "$(npm pack --dry-run 2>&1 | rg -c "dist/plugin/opencode-mesh\.js$" || echo 0)" -eq 1 || (echo "pack gate: dist/plugin/opencode-mesh.js !=1" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "dist/index\.js" || echo 0)" -eq 0 || (echo "pack gate: dist/index.js leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "dist/src" || echo 0)" -eq 0 || (echo "pack gate: dist/src leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "docs/" || echo 0)" -eq 0 || (echo "pack gate: docs/ leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c " plugin/.*\.ts" || echo 0)" -eq 0 || (echo "pack gate: plugin/*.ts leaked" && exit 1)
+          echo PACK_GATES_OK
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm run coverage
+      - name: Upload coverage
+        # Coverage upload is enforcing now that the 90% floor holds.
+        # Tokenless: public repo, no CODECOV_TOKEN. Fallback if auth ever
+        # rejects: add repo secret CODECOV_TOKEN and pass
+        # `token: ${{ secrets.CODECOV_TOKEN }}`.
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: ./coverage/lcov.info
+          disable_search: true
+          fail_ci_if_error: true
+          verbose: true
+      - name: Harness zsh -n
+        run: zsh -n scripts/*.sh && echo zsh_ok
+      - name: Secret scan
+        shell: bash
+        run: |
+          set -o pipefail
+          ! rg -n --no-ignore -g '!package-lock.json' "BEGIN .*PRIVATE KEY|ghp_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|xox[bap]-[A-Za-z0-9-]{8,}|sk-live-[A-Za-z0-9]{8,}|AKIA[0-9A-Z]{16}" src plugin bin docs examples skills/opencode-mesh/SKILL.md README.md ARCHITECTURE.md 2>/dev/null | grep -q . && echo SECRETS_OK || (echo "secret shape blocks merge" && exit 1)
+      - name: Stat perms
+        run: stat -f %OLp scripts/verify-mesh-harness.sh 2>/dev/null || stat -c %a scripts/verify-mesh-harness.sh
+      - name: py_compile
+        run: if ls scripts/*.py >/dev/null 2>&1; then python3 -m py_compile scripts/*.py && echo py_ok; else echo py_no_files_ok; fi
+      - name: p99 histogram
+        run: npm test -- --reporter=json | tee p99.json; echo "p99>100ms"
+      - name: Upload p99
+        uses: actions/upload-artifact@834a144ee995460fba709515e742a54d53e99b97 # v4
+        with:
+          name: p99
+          path: p99.json

@@ -1,0 +1,80 @@
+{
+  "name": "opencode-mesh",
+  "version": "1.0.0",
+  "description": "A free plugin that enables agent-to-agent native communication between any OpenCode sessions.",
+  "author": "divisionseven",
+  "license": "MIT",
+  "homepage": "https://github.com/divisionseven/opencode-mesh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/divisionseven/opencode-mesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/divisionseven/opencode-mesh/issues"
+  },
+  "documentation": {
+    "url": "https://github.com/divisionseven/opencode-mesh/blob/main/docs/index.md"
+  },
+  "changelog": {
+    "url": "https://github.com/divisionseven/opencode-mesh/blob/main/CHANGELOG.md"
+  },
+  "keywords": [
+    "opencode",
+    "mesh",
+    "session",
+    "ipc",
+    "prompt-async",
+    "xdg",
+    "tui-identical",
+    "opencode-plugin"
+  ],
+  "engines": {
+    "opencode": ">=1.3.13 <2.0.0",
+    "node": ">=22"
+  },
+  "type": "module",
+  "main": "./dist/plugin/opencode-mesh.js",
+  "types": "./dist/plugin/opencode-mesh.d.ts",
+  "bin": {
+    "opencode-mesh": "./bin/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/plugin/opencode-mesh.d.ts",
+      "import": "./dist/plugin/opencode-mesh.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "skills"
+  ],
+  "scripts": {
+    "build": "node scripts/gen-version.js && rm -rf dist && tsc -p tsconfig.json && tsc -p tsconfig.plugin.json && rm -rf dist/src && node scripts/fix-plugin-imports.js",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.plugin.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "harness": "zsh scripts/verify-mesh-harness.sh",
+    "gc": "node dist/gc.js",
+    "prepublishOnly": "node scripts/gen-version.js && scripts/check-todo-publish.sh && npm run build"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.4.10",
+    "@opencode-ai/sdk": "^1.4.10"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "copyright": "Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)",
+  "funding": "https://github.com/sponsors/divisionseven"
+}

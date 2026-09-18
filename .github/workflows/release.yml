@@ -1,0 +1,172 @@
+name: 🚀 Release
+on:
+  push:
+    tags:
+      - "v*"
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+
+env:
+  PROJECT_NAME: OpenCode-Mesh
+  REPO: divisionseven/opencode-mesh
+  LOGO_LIGHT: https://raw.githubusercontent.com/divisionseven/opencode-mesh/main/docs/assets/brand/OC_MESH_M.svg
+  LOGO_DARK: https://raw.githubusercontent.com/divisionseven/opencode-mesh/main/docs/assets/brand/OC_MESH_M.svg
+  LOGO_WIDTH: "300"
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Extract version metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${VERSION}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Pre-release tag detected: ${TAG}"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Stable release tag detected: ${TAG}"
+          fi
+      - name: Set up Python (for validation scripts)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check version consistency
+        run: python3 scripts/check-version.py "${{ steps.meta.outputs.tag }}"
+      - name: Extract and validate changelog entry
+        run: |
+          python3 scripts/extract-changelog.py "${{ steps.meta.outputs.version }}" CHANGELOG.md > /dev/null
+          echo "CHANGELOG_OK: entry present for ${{ steps.meta.outputs.version }}"
+  build:
+    needs: [validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history for release-notes git reads (prev-tag plus commit range).
+          fetch-depth: 0
+      - name: Setup Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Install dependencies
+        run: npm ci
+      - name: TODO(PUBLISH) gate
+        shell: zsh
+        run: scripts/check-todo-publish.sh
+      - name: gen-version
+        run: node scripts/gen-version.js && cat src/version.ts | rg -c VERSION
+      - name: Build
+        run: npm run build
+      - name: publint
+        run: npx --yes publint --strict
+      - name: pack gates
+        run: |
+          test "$(npm pack --dry-run 2>&1 | rg -c "dist/plugin/opencode-mesh\.js$" || echo 0)" -eq 1 || (echo "pack gate: dist/plugin/opencode-mesh.js !=1" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "dist/index\.js" || echo 0)" -eq 0 || (echo "pack gate: dist/index.js leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "dist/src" || echo 0)" -eq 0 || (echo "pack gate: dist/src leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "docs/" || echo 0)" -eq 0 || (echo "pack gate: docs/ leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c " plugin/.*\.ts" || echo 0)" -eq 0 || (echo "pack gate: plugin/*.ts leaked" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "(^| )LICENSE$" || echo 0)" -ge 1 || (echo "pack gate: LICENSE missing" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "(^| )README\.md$" || echo 0)" -ge 1 || (echo "pack gate: README.md missing" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "(^| )CHANGELOG\.md$" || echo 0)" -ge 1 || (echo "pack gate: CHANGELOG.md missing" && exit 1)
+          test "$(npm pack --dry-run 2>&1 | rg -c "skills/opencode-mesh/SKILL\.md$" || echo 0)" -ge 1 || (echo "pack gate: skills SKILL.md missing" && exit 1)
+          echo PACK_GATES_OK
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm run coverage
+      - name: Pack tgz
+        run: mkdir -p ./dist-tgz && npm pack --pack-destination ./dist-tgz
+      - name: Generate SBOM and checksums
+        run: |
+          npm sbom --sbom-format cyclonedx --omit dev > ./dist-tgz/sbom.cyclonedx.json
+          npm sbom --sbom-format spdx --omit dev > ./dist-tgz/sbom.spdx.json
+          python3 -c "import json; d=json.load(open('./dist-tgz/sbom.cyclonedx.json')); assert d['bomFormat']=='CycloneDX', d.get('bomFormat')"
+          python3 -c "import json; d=json.load(open('./dist-tgz/sbom.spdx.json')); assert d['spdxVersion'].startswith('SPDX-'), d.get('spdxVersion')"
+          (cd ./dist-tgz && sha256sum ./*.tgz sbom.cyclonedx.json sbom.spdx.json > sha256sums.txt)
+      - name: Idempotency guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "RELEASE_EXISTS: $GITHUB_REF_NAME already exists" >&2
+            exit 1
+          fi
+          PUBLISHED="$(npm view opencode-mesh version 2>/dev/null || true)"
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "NPM_VERSION_EXISTS: opencode-mesh@$VERSION already published" >&2
+            exit 1
+          fi
+          echo "IDEMPOTENCY_OK: no existing release or npm version for $GITHUB_REF_NAME"
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public ./dist-tgz/*.tgz
+      - name: Render release body
+        run: |
+          PRERELEASE_ARGS=()
+          case "${{ needs.validate.outputs.prerelease }}" in
+            true ) PRERELEASE_ARGS=(--prerelease) ;;
+          esac
+          python3 scripts/build-release-notes.py \
+            --version "${{ needs.validate.outputs.version }}" \
+            --repo "$REPO" \
+            --project "$PROJECT_NAME" \
+            --changelog CHANGELOG.md \
+            --logo-light "$LOGO_LIGHT" \
+            --logo-dark "$LOGO_DARK" \
+            --logo-width "$LOGO_WIDTH" \
+            "${PRERELEASE_ARGS[@]}" \
+            > /tmp/release-body.md
+          echo "── Release body preview (first 40 lines) ──"
+          head -40 /tmp/release-body.md
+          echo "────────────────────────────────────────────"
+      - name: Asset guard
+        run: |
+          MISSING=0
+          for asset in ./dist-tgz/opencode-mesh-*.tgz ./dist-tgz/sbom.cyclonedx.json ./dist-tgz/sbom.spdx.json ./dist-tgz/sha256sums.txt /tmp/release-body.md; do
+            if [ ! -s "$asset" ]; then
+              echo "FAIL: missing or empty asset $asset"
+              MISSING=1
+            fi
+          done
+          if [ "$MISSING" -ne 0 ]; then
+            echo "One or more release assets are missing or empty." >&2
+            exit 1
+          fi
+          echo "ASSET_GUARD_OK"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ needs.validate.outputs.prerelease }}" = "true" ]; then
+            gh release create "$GITHUB_REF_NAME" ./dist-tgz/*.tgz ./dist-tgz/sbom.cyclonedx.json ./dist-tgz/sbom.spdx.json ./dist-tgz/sha256sums.txt --title "$GITHUB_REF_NAME" --notes-file /tmp/release-body.md --prerelease
+          else
+            gh release create "$GITHUB_REF_NAME" ./dist-tgz/*.tgz ./dist-tgz/sbom.cyclonedx.json ./dist-tgz/sbom.spdx.json ./dist-tgz/sha256sums.txt --title "$GITHUB_REF_NAME" --notes-file /tmp/release-body.md --latest
+          fi

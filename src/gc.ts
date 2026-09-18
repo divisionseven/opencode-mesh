@@ -1,0 +1,154 @@
+// Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
+// SPDX-License-Identifier: MIT
+// Garbage collection for stale registry plus the inbox drain owned here.
+import { execFile } from "node:child_process";
+import { readdir, readFile, rmdir, stat, unlink, open } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
+import { LEGACY_OWNER_TTL_MS, STALE_TTL_MS, OUTBOX_TTL_MS, OUTBOX_MAX_ATTEMPTS } from "./constants.js";
+import { ensureDir0700 } from "./fsAtomic.js";
+import { atomicUpdateRegistry, fetchSinglePortStatusMap, pruneDeadByStatus, pruneStale } from "./registry.js";
+import { resolveMeshRoot, resolveOutboxPath, resolveRegistryPath } from "./xdg.js";
+
+const pExecFile = promisify(execFile);
+
+// trash owns user-data deletes (durability contract; same pattern as src/install/stow.ts).
+// Outbox/token artifacts regenerate safely — skipped when trash is absent, never force-deleted.
+async function trashPath(p: string): Promise<void> {
+  try {
+    await pExecFile("trash", [p]);
+  } catch {
+    try {
+      await pExecFile("/usr/bin/trash", [p]);
+    } catch {}
+  }
+}
+
+// Why: owner age lives in constants beside the other TTLs; the inbox drain below owns removal.
+const OWNER_TTL_MS = LEGACY_OWNER_TTL_MS;
+
+export interface GcResult {
+  prunedRegistry: number;
+  prunedInbox: number;
+  prunedAudit: number;
+  prunedLive: number;
+  prunedOutbox: number;
+  deadLetterOutbox?: number;
+  liveSkipped?: string;
+}
+
+async function trashOldInbox(): Promise<number> {
+  let pruned = 0;
+  try {
+    const root = resolveMeshRoot();
+    const inboxRoot = resolve(root, "inbox");
+    const ents = await readdir(inboxRoot).catch(() => [] as string[]);
+    for (const id of ents) {
+      const dir = join(inboxRoot, id);
+      const st = await stat(dir).catch(() => null);
+      if (!st?.isDirectory()) continue;
+      const files = await readdir(dir).catch(() => [] as string[]);
+      for (const f of files) {
+        const p = join(dir, f);
+        const s = await stat(p).catch(() => null);
+        if (!s) continue;
+        const age = Date.now() - s.mtimeMs;
+        const ownerFile = ".owner";
+        const replySuffix = ".reply.json";
+        if (f === ownerFile && age > OWNER_TTL_MS) {
+          await unlink(p).catch(() => {});
+          pruned++;
+        } else if ((f.endsWith(".json") || f.endsWith(replySuffix)) && age > STALE_TTL_MS) {
+          await unlink(p).catch(() => {});
+          pruned++;
+        }
+      }
+      const remain = await readdir(dir).catch(() => [] as string[]);
+      if (remain.length === 0) await rmdir(dir).catch(() => {});
+    }
+    await trashPath(resolve(root, "outbox"));
+    await trashPath(resolve(root, "token"));
+  // Why: best-effort — inbox cleanup failure must not halt the GC sweep.
+  } catch {}
+  return pruned;
+}
+
+/**
+ * Nightly sweep for stale registry plus inbox drain plus outbox TTL.
+ * One sweep owns every time delete so storage stays bounded.
+ */
+export async function runGc(meshRoot?: string): Promise<GcResult> {
+  const root = meshRoot ?? resolveMeshRoot();
+  await ensureDir0700(root);
+  let prunedRegistry = 0;
+  let prunedInbox = 0;
+  let prunedOutbox = 0;
+  let deadLetterOutbox = 0;
+  const registryPath = resolveRegistryPath(meshRoot);
+  try {
+    const data = await readFile(registryPath, "utf8");
+    const raw = JSON.parse(data) as unknown as Record<string, unknown> & { version?: number; entries?: Record<string, { updatedAt: number }> };
+    const regEntries = raw.version === 1 && raw.entries ? (raw.entries as Record<string, { updatedAt: number }>) : (raw as Record<string, { updatedAt: number }>);
+    const before = Object.keys(regEntries).length;
+    const pruned = pruneStale(regEntries as unknown as Parameters<typeof pruneStale>[0]);
+    prunedRegistry = before - Object.keys(pruned).length;
+    if (prunedRegistry > 0) {
+      await atomicUpdateRegistry((reg) => {
+        for (const k of Object.keys(reg)) if (!(k in pruned)) delete reg[k];
+      }, meshRoot);
+    }
+  // Why: best-effort — registry read failure must not block the GC sweep.
+  } catch {}
+  let prunedLive = 0;
+  let liveSkipped: string | undefined;
+  try {
+    const statusMap = await fetchSinglePortStatusMap();
+    if (statusMap) {
+      await atomicUpdateRegistry((reg) => {
+        prunedLive = pruneDeadByStatus(reg, statusMap);
+      }, meshRoot);
+    } else {
+      liveSkipped = "no-single-port-view";
+    }
+  } catch {
+    liveSkipped = "no-single-port-view";
+  }
+  prunedInbox = await trashOldInbox();
+  try {
+    const outboxPath = resolveOutboxPath(meshRoot);
+    let headerOk = true;
+    try {
+      const fh = await open(outboxPath, "r").catch(() => null);
+      if (fh) {
+        try {
+          const buf = Buffer.alloc(16);
+          const { bytesRead } = await fh.read(buf, 0, 16, 0);
+          if (bytesRead === 16 && buf.toString("utf8", 0, 6) !== "SQLite") headerOk = false;
+        } finally {
+          await fh.close().catch(() => {});
+        }
+      }
+    } catch {
+      headerOk = true;
+    }
+    if (!headerOk) {
+      await trashPath(outboxPath);
+    } else {
+      const { collectOutbox } = await import("./outbox.js");
+      const now = Date.now();
+      const collected = await collectOutbox(now, OUTBOX_TTL_MS, OUTBOX_MAX_ATTEMPTS, meshRoot);
+      prunedOutbox = collected.deleted;
+      deadLetterOutbox = collected.deadLetter;
+    }
+  // Why: best-effort — outbox VACUUM or collection failure must not block the GC sweep.
+  } catch {}
+  return { prunedRegistry, prunedInbox, prunedAudit: 0, prunedLive, prunedOutbox, deadLetterOutbox, liveSkipped };
+}
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runGc()
+    .then((r) => console.log(JSON.stringify(r)))
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+}
