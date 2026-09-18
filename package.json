@@ -61,11 +61,11 @@
     "prepublishOnly": "node scripts/gen-version.js && bash scripts/check-todo-publish.sh && npm run typecheck && npm run build"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.4.10",
+    "@opencode-ai/plugin": "^1.18.30",
     "@opencode-ai/sdk": "^1.4.10"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
+    "@types/node": "^26.5.1",
     "@vitest/coverage-v8": "^3.2.7",
     "tsx": "^4.19.0",
     "typescript": "^5.9.2",
