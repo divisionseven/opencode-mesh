@@ -256,7 +256,7 @@ describe('plugin poison plus ghost matrix', () => {
     await mkdir(join(root, 'registry.json'));
     const hooks = await init({});
     // Why: autoRegister swallows the poisoned read, then the tool wrapper
-    // stays loud per its contract. Both legs pinned: no silent success.
+    // stays loud per its contract.
     await expect(
       hooks.tool.mesh_register.execute({}, { sessionID: 'ses-p', directory: '/tmp' })
     ).rejects.toThrow();

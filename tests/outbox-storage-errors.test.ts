@@ -1,12 +1,8 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
  // SPDX-License-Identifier: MIT
 // Outbox storage-error vocabulary behind a fake node:sqlite driver.
-// Single module evaluation for the file (no per-test resets) so every
-// variant attributes; behavior switches through the hoisted control.
 // Each variant pins a fail-closed mapping: FULL, CORRUPT, missing driver
-// methods, undefined reads, commit failure, migration races. Real driver
-// behavior is owned by outbox-claimer plus sqlite-lazy; this file owns
-// only the error legs.
+// methods, undefined reads, commit failure, migration races.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

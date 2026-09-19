@@ -99,6 +99,11 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 
 ## Installation
 
+> [!NOTE]
+> OpenCode-Mesh is currently compatible with [OpenCode v1][link-opencode] (>= 1.3.13, < 2.0.0).
+> [OpenCode v2][opencode-v2-docs] (`opencode2`) support is scheduled for a future release.
+> If you are a v2 user, please [submit an issue][gh-issues-link] so we can gauge demand.
+
 *Windows is currently untested. Please submit an issue to report its functionality.*
 
 [![Platforms][platforms-macos-badge]][link-releases]
@@ -519,6 +524,7 @@ and community contributions.
 [divisionseven-gh]: https://github.com/divisionseven
 [gh-new-security-vuln]: https://github.com/divisionseven/opencode-mesh/security/advisories/new
 [opencode-repo]: https://github.com/anomalyco/opencode
+[opencode-v2-docs]: https://opencode.ai/v2/docs
 [unified-kanban-repo]: https://github.com/divisionseven/unified-kanban
 [pkg-defender]: https://github.com/divisionseven/pkg-defender
 [error-codes]: docs/troubleshooting.md
