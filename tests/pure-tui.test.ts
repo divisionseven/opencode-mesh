@@ -4,7 +4,7 @@
 // Covers: NO_FILE_MAILBOX, ONE_WAY (admit baseline), RUNNER_JOIN (sequential, no inline sleep), DIRECTORY_ROUTING,
 // PROMPT_INPUT, AUTH_BASIC, sanitizeSessionId, assertSendable 413, loopback, withRegistryLock,
 // registry cross-process lock, gc legacy drain 24h, broadcast N sequential, busy retry, 401/404
-import { mkdtemp, readdir, rm, stat, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -612,7 +612,7 @@ describe('fallback', () => {
     await safeRm(root);
   });
 
-  it('gc legacy drain 24h — inbox .owner>5m, *.json>24h, outbox/token removed, registry 24h prune', async () => {
+  it('gc legacy drain 24h — inbox .owner>5m, *.json>24h, legacy outbox dir removed, token file kept, registry 24h prune', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mesh-gc-'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     const prevDb = process.env.OPENCODE_MESH_DB_PATH;
@@ -653,7 +653,7 @@ describe('fallback', () => {
     const remaining = await readdir(inboxRoot).catch(() => [] as string[]);
     expect(remaining.includes('legacySess')).toBe(false);
     await expect(stat(join(root, 'outbox'))).rejects.toThrow();
-    await expect(stat(join(root, 'token'))).rejects.toThrow();
+    expect(await readFile(join(root, 'token'), 'utf8')).toBe('legacy-token');
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
     await safeRm(root);

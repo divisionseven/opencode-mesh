@@ -35,6 +35,19 @@ async function trashPath(p: string): Promise<void> {
   await removePathFallback(p);
 }
 
+/** Legacy markers are directories from the pre-file layout. Anything else
+at those paths is left alone: the current code never creates files there. */
+async function trashIfLegacyDir(p: string): Promise<void> {
+  let st;
+  try {
+    st = await stat(p);
+  } catch {
+    return;
+  }
+  if (!st.isDirectory()) return;
+  await trashPath(p);
+}
+
 // Why: owner age lives in constants beside the other TTLs; the inbox drain below owns removal.
 const OWNER_TTL_MS = LEGACY_OWNER_TTL_MS;
 
@@ -77,8 +90,8 @@ async function trashOldInbox(): Promise<number> {
       const remain = await readdir(dir).catch(() => [] as string[]);
       if (remain.length === 0) await rmdir(dir).catch(() => {});
     }
-    await trashPath(resolve(root, "outbox"));
-    await trashPath(resolve(root, "token"));
+    await trashIfLegacyDir(resolve(root, "outbox"));
+    await trashIfLegacyDir(resolve(root, "token"));
   // Why: best-effort — inbox cleanup failure must not halt the GC sweep.
   } catch {}
   return pruned;
