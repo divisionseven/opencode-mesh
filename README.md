@@ -83,7 +83,7 @@ flowchart TD
     MgrC --> DocUpdaterC["documentation-updater - docs"]
     MgrC --> RetrospectiveC["retrospective - docs"]
 ```
-  <p><sub><em>The user talks with one orchestrator, the orchestrator delegates with <code>mesh_send</code>, managers run teams in their own repos. Run <code>mesh_peers</code> to find other managers and read receipts to track each reply.</p></sub></em>
+  <p><sub><em>The user talks with one orchestrator, the orchestrator delegates with <code>mesh_send</code>, managers run teams in their own repos.</p></sub></em>
 
 </div>
 
