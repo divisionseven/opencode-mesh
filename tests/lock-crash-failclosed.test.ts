@@ -332,20 +332,33 @@ describe('crash-safe lock — reap and wait', () => {
       const dead = await freshDeadPid();
       await plantLock(root, `${dead}:${Date.now()}`);
       const { withRegistryLock, writeAtomic } = await import('../src/fsAtomic.js');
-      const racers = [0, 1, 2, 3].map((i) =>
+      const runOne = (i: number) =>
         withRegistryLock(async () => {
           await writeAtomic(join(root, `marker-${i}.json`), JSON.stringify({ i }), {
             mode: 0o600,
           });
           return i;
-        })
-      );
-      const results = await Promise.allSettled(racers);
-      const codes = results
-        .filter((r) => r.status === 'rejected')
-        .map((r) => (r as PromiseRejectedResult).reason as { code?: string });
-      expect(codes.map((c) => c?.code)).not.toContain('ENOENT');
-      expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+        });
+      // Why: waiter patience is bounded (3 attempts) while the holder rides
+      // real fsync, so under load a waiter can exhaust with EEXIST. The
+      // pinned claim is every-fn-runs plus never-ENOENT, so exhausted
+      // waiters re-race in later rounds instead of failing the run.
+      const seen: string[] = [];
+      let pending = [0, 1, 2, 3];
+      for (let round = 0; round < 10 && pending.length > 0; round++) {
+        const results = await Promise.allSettled(pending.map(runOne));
+        const next: number[] = [];
+        results.forEach((r, k) => {
+          if (r.status === 'fulfilled') return;
+          const code = (r.reason as { code?: string })?.code;
+          seen.push(String(code));
+          if (code === 'EEXIST') next.push(pending[k]);
+          else throw r.reason;
+        });
+        pending = next;
+      }
+      expect(pending).toEqual([]);
+      expect(seen).not.toContain('ENOENT');
       for (let i = 0; i < 4; i++) {
         expect(JSON.parse(await readFile(join(root, `marker-${i}.json`), 'utf8'))).toEqual({
           i,
