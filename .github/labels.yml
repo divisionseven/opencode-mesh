@@ -36,7 +36,7 @@
 
 - name: "status: needs-triage"
   color: "ededed"
-  description: Newly opened: needs maintainer review and categorisation
+  description: "Newly opened: needs maintainer review and categorisation"
 
 - name: "status: needs-reproduction"
   color: "e99695"
@@ -74,19 +74,19 @@
 
 - name: "priority: critical"
   color: "b60205"
-  description: Must be resolved immediately: data loss, security breach, or total breakage
+  description: "Must be resolved immediately: data loss, security breach, or total breakage"
 
 - name: "priority: high"
   color: "d93f0b"
-  description: High impact: should be resolved in the current or next release
+  description: "High impact: should be resolved in the current or next release"
 
 - name: "priority: medium"
   color: "fbca04"
-  description: Medium impact: planned for a future release
+  description: "Medium impact: planned for a future release"
 
 - name: "priority: low"
   color: "0e8a16"
-  description: Low impact: nice to have
+  description: "Low impact: nice to have"
 
 # ── Area ──────────────────────────────────────────────────────────────────────
 

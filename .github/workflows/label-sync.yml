@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths:
       - ".github/labels.yml"
+  pull_request:
+    paths:
+      - ".github/labels.yml"
   workflow_dispatch:
 
 permissions:
@@ -13,6 +16,7 @@ jobs:
   sync-labels:
     name: Sync Repository Labels
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       issues: write
     steps:
@@ -24,4 +28,23 @@ jobs:
         with:
           config-file: .github/labels.yml
           delete-other-labels: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  preview-labels:
+    name: Preview Label Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Preview labels
+        uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a  # v2.3.3
+        with:
+          config-file: .github/labels.yml
+          delete-other-labels: true
+          dry-run: true
           token: ${{ secrets.GITHUB_TOKEN }}

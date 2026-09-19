@@ -795,4 +795,143 @@ describe('outbox: durable queue with atomic claim', () => {
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRmArmed(root); restore();
   });
+
+  it('acks via direct fallback on 204', async () => {
+    // given an owned session plus a modeled sender on a fresh root
+    const { root, restore } = await freshRoot('mesh-claim-direct-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    vi.resetModules();
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    const now = Date.now();
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-owned'] = { sessionId: 'ses-owned', agent: 'beta', model: 'myprov/my-model', updatedAt: now };
+      r['ses-from'] = { sessionId: 'ses-from', agent: 'alpha', model: 'myprov/my-model', updatedAt: now };
+    }, root);
+    const ob = await import('../src/outbox.js');
+    const rowId = await ob.enqueue({ target_session: 'ses-owned', from_session: 'ses-from', from_agent: 'alpha', text: 'hello direct' }, root);
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/session/status')) return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      if (u.includes('/prompt_async')) {
+        posts.push({ url: u, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+        return { ok: true, status: 204 } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const cl = await import('../src/claimer.js');
+    cl.configureClaimer({
+      getOwnIds: () => ['ses-owned'],
+      getClient: () => null,
+      getRegistry: async () => (await readRegistry(root)) as Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>,
+    });
+    // when the claimer polls without a client while loopback answers
+    await cl.pollClaimer();
+    // then the row is delivered and acked with the receiver identity on the wire
+    const receipt = await ob.receiptById(rowId, root);
+    expect(receipt.state).toBe('injected-progressing');
+    expect(await ob.pendingCount(['ses-owned'], root)).toBe(0);
+    expect(posts.length).toBe(1);
+    expect(posts[0].body['messageID']).toBe(rowId);
+    expect(posts[0].body['agent']).toBe('beta');
+    cl.clearClaimerTimer();
+    await cl.releaseClaimerOwner();
+    await cl.pollClaimer();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRmArmed(root); restore();
+  });
+
+  it('terminalizes on direct 404 without redelivery', async () => {
+    // given an owned session plus a modeled sender on a fresh root
+    const { root, restore } = await freshRoot('mesh-claim-direct404-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    vi.resetModules();
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    const now = Date.now();
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-owned'] = { sessionId: 'ses-owned', agent: 'beta', model: 'myprov/my-model', updatedAt: now };
+      r['ses-from'] = { sessionId: 'ses-from', agent: 'alpha', model: 'myprov/my-model', updatedAt: now };
+    }, root);
+    const ob = await import('../src/outbox.js');
+    const rowId = await ob.enqueue({ target_session: 'ses-owned', from_session: 'ses-from', from_agent: 'alpha', text: 'gone direct' }, root);
+    let postCount = 0;
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/session/status')) return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      if (u.includes('/prompt_async')) {
+        postCount++;
+        return { ok: false, status: 404 } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const cl = await import('../src/claimer.js');
+    cl.configureClaimer({
+      getOwnIds: () => ['ses-owned'],
+      getClient: () => null,
+      getRegistry: async () => (await readRegistry(root)) as Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>,
+    });
+    // when the claimer polls twice while the peer reports gone
+    await cl.pollClaimer();
+    await cl.pollClaimer();
+    // then the row carries the terminal 404 reason and never re-fires
+    const receipt = await ob.receiptById(rowId, root);
+    expect(receipt.state).toBe('failed-permanent');
+    expect(receipt.reason).toBe('direct-terminal-404');
+    expect(postCount).toBe(1);
+    cl.clearClaimerTimer();
+    await cl.releaseClaimerOwner();
+    await cl.pollClaimer();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRmArmed(root); restore();
+  });
+
+  it('terminalizes on direct 401 without redelivery', async () => {
+    // given an owned session plus a modeled sender on a fresh root
+    const { root, restore } = await freshRoot('mesh-claim-direct401-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    vi.resetModules();
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    const now = Date.now();
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-owned'] = { sessionId: 'ses-owned', agent: 'beta', model: 'myprov/my-model', updatedAt: now };
+      r['ses-from'] = { sessionId: 'ses-from', agent: 'alpha', model: 'myprov/my-model', updatedAt: now };
+    }, root);
+    const ob = await import('../src/outbox.js');
+    const rowId = await ob.enqueue({ target_session: 'ses-owned', from_session: 'ses-from', from_agent: 'alpha', text: 'denied direct' }, root);
+    let postCount = 0;
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/session/status')) return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+      if (u.includes('/prompt_async')) {
+        postCount++;
+        return { ok: false, status: 401 } as unknown as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const cl = await import('../src/claimer.js');
+    cl.configureClaimer({
+      getOwnIds: () => ['ses-owned'],
+      getClient: () => null,
+      getRegistry: async () => (await readRegistry(root)) as Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>,
+    });
+    // when the claimer polls twice while the peer denies access
+    await cl.pollClaimer();
+    await cl.pollClaimer();
+    // then the row carries the terminal 401 reason and never re-fires
+    const receipt = await ob.receiptById(rowId, root);
+    expect(receipt.state).toBe('failed-permanent');
+    expect(receipt.reason).toBe('direct-terminal-401');
+    expect(postCount).toBe(1);
+    cl.clearClaimerTimer();
+    await cl.releaseClaimerOwner();
+    await cl.pollClaimer();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRmArmed(root); restore();
+  });
 });

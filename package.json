@@ -36,7 +36,7 @@
   "main": "./dist/plugin/opencode-mesh.js",
   "types": "./dist/plugin/opencode-mesh.d.ts",
   "bin": {
-    "opencode-mesh": "./bin/cli.js"
+    "opencode-mesh": "bin/cli.js"
   },
   "exports": {
     ".": {
@@ -56,9 +56,9 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.plugin.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
-    "harness": "zsh scripts/verify-mesh-harness.sh",
+    "harness": "bash scripts/verify-mesh-harness.sh",
     "gc": "node dist/gc.js",
-    "prepublishOnly": "node scripts/gen-version.js && scripts/check-todo-publish.sh && npm run build"
+    "prepublishOnly": "node scripts/gen-version.js && bash scripts/check-todo-publish.sh && npm run typecheck && npm run build"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.4.10",

@@ -12,6 +12,7 @@ jobs:
   stale:
     name: Mark and Close Stale Issues & PRs
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       issues: write
       pull-requests: write
@@ -54,6 +55,9 @@ jobs:
             please re-open the PR or open a new one.
 
           # ── Exemptions ───────────────────────────────────────────────────────
+          # Policy: `bug` issues are exempt by design (they stay open until fixed).
+          # `pinned`, `security`, `help wanted`, `good first issue` are exempt as
+          # community plus safety signals. PRs stay narrower (no `bug` exemption).
           exempt-issue-labels: "pinned,security,bug,status: in-progress,help wanted,good first issue"
           exempt-pr-labels: "pinned,security,status: in-progress,do not close"
           exempt-all-milestones: true
