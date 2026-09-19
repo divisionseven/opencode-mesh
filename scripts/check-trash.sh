@@ -5,6 +5,7 @@
 # Corpus is docs procedures ONLY (scripts excluded by construction; script bodies legitimately invoke cleanup).
 # Gate text describes the property without naming the banned token.
 set -euo pipefail
+command -v rg >/dev/null 2>&1 || { echo "trash gate: rg not found" >&2; exit 1; }
 ROOT="${1:-${CHECK_ROOT:-.}}"
 cd "$ROOT"
 # Docs procedures that discuss deletes must reference the recoverable tool.
@@ -30,7 +31,12 @@ if [ -n "$violations" ]; then
 fi
 # Shipped cleanup paths own the recoverable form too (gc drain owned here; stow adapter owned by src/install/stow.ts).
 grep -q "trashPath" src/gc.ts || { echo "TRASH_FAIL: gc drain must own the recoverable form" >&2; exit 1; }
-if sed 's/rmdir//g' src/gc.ts | rg -n "(^|[^[:alnum:]_])rm([^[:alnum:]_])" 2>/dev/null | grep -q .; then
+grep -q "removePathFallback" src/gc.ts || { echo "TRASH_FAIL: gc fallback helper missing" >&2; exit 1; }
+grep -q 'pExecFile("trash"' src/gc.ts || { echo "TRASH_FAIL: gc must attempt the recoverable form first" >&2; exit 1; }
+# Fallback allowlist is exactly two lines: the fs/promises import line and the single
+# await rm( call inside removePathFallback. Every other bare rm site still fails.
+gc_stripped=$(sed 's/rmdir//g' src/gc.ts | grep -v 'from "node:fs/promises"' | grep -v 'await rm(')
+if rg -q -n "(^|[^[:alnum:]_])rm([^[:alnum:]_])" <<<"$gc_stripped" 2>/dev/null; then
   echo "TRASH_FAIL: gc user-data paths must name the recoverable delete tool" >&2
   exit 1
 fi

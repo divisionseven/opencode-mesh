@@ -56,7 +56,7 @@ Closes #<!-- issue number -->
 
 - [ ] I have added tests that cover the changes in this PR
 - [ ] I have confirmed all existing tests pass locally (`npm run coverage`)
-- [ ] I have run the mesh harness locally (`zsh scripts/verify-mesh-harness.sh`)
+- [ ] I have run the mesh harness locally (`bash scripts/verify-mesh-harness.sh`)
 - [ ] I have tested this manually (describe what you did below)
 
 **Manual testing performed:**
@@ -66,7 +66,7 @@ Closes #<!-- issue number -->
 
 ## Checklist
 
-- [ ] My code follows the project's style guidelines (see CONTRIBUTING.md; `zsh -n scripts/*.sh` clean)
+- [ ] My code follows the project's style guidelines (see CONTRIBUTING.md; `bash -n scripts/*.sh` clean)
 - [ ] My code passes type checking (`npm run typecheck`)
 - [ ] My changes maintain or improve code coverage (`npm run coverage`; 90% target per `vitest.config.ts`)
 - [ ] My CLI changes use the correct exit codes defined in `docs/troubleshooting.md`

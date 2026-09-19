@@ -15,33 +15,40 @@ updates:
       - "area: dependencies"
     commit-message:
       prefix: "chore(deps)"
-    reviewers:
-      - divisionseven
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
     # Group all non-major updates together to reduce PR noise
     groups:
       npm-minor-patch:
         update-types:
           - minor
           - patch
+      npm-major:
+        update-types:
+          - major
 
   # ── GitHub Actions ────────────────────────────────────────────────────────────
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
-      day: monday
+      day: tuesday
       time: "08:00"
       timezone: "UTC"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     labels:
       - chore
       - "area: ci-cd"
     commit-message:
       prefix: "chore(actions)"
-    reviewers:
-      - divisionseven
+    cooldown:
+      default-days: 7
     groups:
       actions-minor-patch:
         update-types:
           - minor
           - patch
+      actions-major:
+        update-types:
+          - major

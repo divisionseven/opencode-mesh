@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to dry-run validate (e.g. 1.2.3, no leading v). Empty defaults to the tag on tag runs."
+        required: false
+        default: ""
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -20,6 +26,7 @@ jobs:
   validate:
     name: Validate release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     outputs:
@@ -34,7 +41,11 @@ jobs:
       - name: Extract version metadata
         id: meta
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          if [ -n "${{ inputs.version }}" ]; then
+            TAG="v${{ inputs.version }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
           VERSION="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -50,14 +61,17 @@ jobs:
         with:
           python-version: "3.12"
       - name: Check version consistency
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
         run: python3 scripts/check-version.py "${{ steps.meta.outputs.tag }}"
       - name: Extract and validate changelog entry
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
         run: |
           python3 scripts/extract-changelog.py "${{ steps.meta.outputs.version }}" CHANGELOG.md > /dev/null
           echo "CHANGELOG_OK: entry present for ${{ steps.meta.outputs.version }}"
   build:
     needs: [validate]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       id-token: write
@@ -67,19 +81,20 @@ jobs:
         with:
           # Full history for release-notes git reads (prev-tag plus commit range).
           fetch-depth: 0
-      - name: Setup Node 22
+      - name: Setup Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
       - name: Install dependencies
         run: npm ci
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep && rg --version && command -v rg
       - name: TODO(PUBLISH) gate
-        shell: zsh
-        run: scripts/check-todo-publish.sh
+        run: bash scripts/check-todo-publish.sh
       - name: gen-version
-        run: node scripts/gen-version.js && cat src/version.ts | rg -c VERSION
+        run: 'node scripts/gen-version.js && test "$(rg -c VERSION src/version.ts || echo 0)" -ge 1 || (echo "version gate: VERSION count 0" && exit 1)'
       - name: Build
         run: npm run build
       - name: publint
@@ -124,10 +139,10 @@ jobs:
             exit 1
           fi
           echo "IDEMPOTENCY_OK: no existing release or npm version for $GITHUB_REF_NAME"
+      # npm trusted publishing (OIDC): token minted via id-token:write, provenance automatic.
       - name: Publish to npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public ./dist-tgz/*.tgz
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm publish --access public ./dist-tgz/*.tgz
       - name: Render release body
         run: |
           PRERELEASE_ARGS=()
@@ -162,6 +177,7 @@ jobs:
           fi
           echo "ASSET_GUARD_OK"
       - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

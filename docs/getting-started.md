@@ -51,7 +51,7 @@ opencode --version
 
 ### Platform notes
 
-The mesh shells out to `/usr/bin/security`, `ps`, `trash`, `stow`, `rg`, and `ls`. Each call degrades silently when its binary is missing. A missing `/usr/bin/security` reads no Keychain password and sends no header. A failed `ps` cycle yields an empty attached snapshot and never stops the poller. A failed restow never fails the write. Scripts run under zsh; examples are POSIX-compatible. Install and purge roots accept homedir at depth 3 or more or tmpdir at depth 2 or more; bare `/tmp` and depth 1 tmp paths never validate.
+The mesh shells out to `/usr/bin/security`, `ps`, `trash`, `stow`, `rg`, and `ls`. Each call degrades silently when its binary is missing. A missing `/usr/bin/security` reads no Keychain password and sends no header. A failed `ps` cycle yields an empty attached snapshot and never stops the poller. A failed restow never fails the write. Scripts run under bash; examples are POSIX-compatible. Install and purge roots accept homedir at depth 3 or more or tmpdir at depth 2 or more; bare `/tmp` and depth 1 tmp paths never validate.
 
 ## Section 2: Install
 
