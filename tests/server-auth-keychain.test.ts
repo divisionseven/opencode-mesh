@@ -20,7 +20,6 @@ function pinEnv(): void {
 }
 
 afterEach(() => {
-  vi.resetModules();
   for (const k of ENV_KEYS) {
     const v = saved.get(k);
     if (v === undefined) delete process.env[k];
