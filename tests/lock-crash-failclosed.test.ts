@@ -188,26 +188,35 @@ describe('crash-safe lock — reap and wait', () => {
 
   it('reap-sigkill — SIGKILLed holder leaves residue the next writer clears', async () => {
     await withScratchRoot(async (root) => {
-      const holderSrc = join(root, 'holder.ts');
+      // Why .mts: outside the package scope tsx treats .ts as CJS and
+      // rejects top-level await; .mts forces ESM like vite-node did.
+      const holderSrc = join(root, 'holder.mts');
       await writeFile(
         holderSrc,
         `import { withRegistryLock } from ${JSON.stringify(join(process.cwd(), 'src/fsAtomic.ts'))};\n` +
           `await withRegistryLock(async () => {\n` +
-          `  console.log('READY');\n` +
+          // Why pid in READY: tsx re-spawns a child to run the file, so
+          // spawn pid is the launcher; the holder reports its own pid.
+          `  console.log('READY ' + process.pid);\n` +
           `  await new Promise((r) => setTimeout(r, 60000));\n` +
           `});\n`
       );
-      const holder = spawn(join(process.cwd(), 'node_modules', '.bin', 'vite-node'), [holderSrc], {
+      // Why tsx: Vitest 4 removed the vite-node binary; tsx (pinned devDep)
+      // runs the holder TS directly with identical semantics.
+      const holder = spawn(join(process.cwd(), 'node_modules', '.bin', 'tsx'), [holderSrc], {
         cwd: process.cwd(),
         env: { ...process.env, OPENCODE_MESH_ROOT: root },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let ready = '';
+      let holderPid = '';
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('holder never ready')), 20_000);
         holder.stdout?.on('data', (d: Buffer) => {
           ready += d.toString();
-          if (ready.includes('READY')) {
+          const match = ready.match(/READY (\d+)/);
+          if (match) {
+            holderPid = match[1];
             clearTimeout(timer);
             resolve();
           }
@@ -216,8 +225,11 @@ describe('crash-safe lock — reap and wait', () => {
       });
       const lockPath = await lockPathFor(root);
       const residue = await readLock(lockPath);
-      expect(residue.startsWith(`${holder.pid}:`)).toBe(true);
-      holder.kill('SIGKILL');
+      expect(residue.startsWith(`${holderPid}:`)).toBe(true);
+      // Why kill reported pid: SIGKILL to the tsx launcher orphans the
+      // real holder (still sleeping, lock unreapable); killing the actual
+      // holder leaves true SIGKILL residue like vite-node did.
+      process.kill(Number(holderPid), 'SIGKILL');
       await once(holder, 'exit');
       await writeEntry(root, 'reaped-sigkill');
       const { readRegistry } = await import('../src/registry.js');

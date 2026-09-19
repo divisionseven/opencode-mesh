@@ -8,11 +8,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     pool: "forks",
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
+    // Why: serial runs. Vitest 4 removed poolOptions; fileParallelism
+    // is the top-level replacement for the old forks singleFork gate.
+    fileParallelism: false,
     // Why: starvation guard, not a product bound — a loaded host must not turn
     // scheduling delay into red. Assertion walls inside tests stay untouched.
     testTimeout: 30000,
