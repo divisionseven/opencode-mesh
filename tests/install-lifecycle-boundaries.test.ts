@@ -493,7 +493,7 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
   // ------------------------------------------------------------------
   // error case: EACCES vs EEXIST vs ENOSPC handling
   // ------------------------------------------------------------------
-  it("readFile missing opencode.json falls back to {} not throw — known leading-comma edge", async () => {
+  it("readFile missing opencode.json falls back to {} not throw — writes valid JSON", async () => {
     const missing = join(tmpdir(), `no-such-${Date.now()}.json`);
     let raw = "";
     try {
@@ -505,29 +505,26 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
     const r = editPluginArrayText(raw, "opencode-mesh", "add");
     expect(r.changed).toBe(true);
     expect(r.text).toContain("opencode-mesh");
-    // Known bug in editPluginArrayText leading comma for "{}" splice; invalid JSON
-    // Build review minor #2 documents this; live opencode.json never "{}" so not blocking.
-    // The bug is asserted rather than hidden.
+    // Empty-object splice writes valid JSON (leading-comma bug fixed).
     expect(r.text).toContain('"plugin"');
-    expect(r.text).toMatch(/\{,\s*\n/);
-    expect(() => JSON.parse(r.text)).toThrow();
+    expect(JSON.parse(r.text)).toEqual({ plugin: ["opencode-mesh"] });
     // For realistic non-empty fallback "{}" with content, splice is valid:
     const ok = editPluginArrayText(`{"a":1}`, "opencode-mesh", "add");
     expect(() => JSON.parse(ok.text)).not.toThrow();
     expect(ok.text).toContain("opencode-mesh");
   });
 
-  it("editPluginArrayText empty file no plugin key adds plugin array — non-empty base valid", () => {
+  it("editPluginArrayText empty file no plugin key adds plugin array — valid JSON", () => {
     const t = `{"a":1}`;
     const r = editPluginArrayText(t, "opencode-mesh", "add");
     expect(r.changed).toBe(true);
     expect(r.text).toContain('"plugin"');
     expect(r.text).toContain('"opencode-mesh"');
     expect(() => JSON.parse(r.text)).not.toThrow();
-    // "{}" edge holds plugin but with leading comma
+    // "{}" edge holds plugin as valid JSON.
     const empty = editPluginArrayText(`{}`, "opencode-mesh", "add");
     expect(empty.text).toContain('"opencode-mesh"');
-    expect(empty.text).toMatch(/\{,\s*\n/);
+    expect(JSON.parse(empty.text)).toEqual({ plugin: ["opencode-mesh"] });
   });
 
   it("editPluginArrayText remove edge: single entry removal yields empty array or no plugin", () => {
