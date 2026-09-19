@@ -10,6 +10,7 @@ and this project adheres to
 
 ### Fixed
 
+- Fix purge logs to omit the resolved path and keep only the provenance label, so env-derived paths never reach clear-text output (gate: CodeQL clear-text logging check)
 - Fix garbage collection to remove legacy outbox and token paths with filesystem removal when the trash binary is absent, so pruning still completes on minimal hosts (gate: trash policy script)
 - Fix CI to run shell steps under bash, install ripgrep before gates, and build the plugin before typecheck and tests (gate: CI green on Node 22 and 24)
 - Fix CI reliability with pinned actions, step timeouts, permission checks, and pack leak gates (gate: CI green with artifact upload)
