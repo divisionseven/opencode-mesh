@@ -62,7 +62,7 @@ Mesh messages can *"wake up"* other agents (if desired), triggering their turn t
 - **Knowledge Accumulation**: Research sessions send their findings to a shared knowledge base session. Over time, that session builds a growing corpus of context. When a new question arrives, it already has the history of everything your team has investigated.
 
 <details>
-<summary><strong>The "Orchestrator" Setup: Our favorite use case</strong></summary>
+<summary><strong>The "Orchestrator" Setup: Our favorite use case (expand)</strong></summary>
 
 <div align="center">
 
@@ -87,7 +87,13 @@ flowchart TD
 
 </div>
 
-Keep one orchestrator session open and let it run the day for you. Tell it the outcome you want in plain language. It finds each manager with `mesh_peers` and assigns work with `mesh_send`. Each manager wakes and delegates to its own subagents inside its own repo and sends back a receipt-tracked reply. Mesh messages wake the next session when action is needed and stay silent when you only want to drop something in the chat history for context. You replace overcomplicated loops with simple messages and keep delegation moving around the clock.
+**How the orchestrator setup works:**
+
+Keep one main "orchestrator" session open and let it run the day for you (we like to make a custom agent trained specifically for this task). Tell your orchestrator the outcome you want in plain language, or simply keep a central issue tracker or [kanban board][unified-kanban-repo] that the agent is trained to check/update.
+
+Your orchestrator finds each project manager with `mesh_peers`, and assigns work or requests updates with `mesh_send`. Each manager session wakes upon being messaged (just like when a user prompts manually), delegates to its team of subagents inside its own project, and sends back a receipt-tracked reply. Mesh messages have the ability to *"wake"* the recipient session if desired by the sender, and stay silent when you only want to drop something in the chat history for context (wake enabled by default).
+
+You can finally replace overcomplicated agent loops and endless prompting with simple messages and keep delegation moving around the clock.
 
 </details>
 
@@ -513,6 +519,7 @@ and community contributions.
 [divisionseven-gh]: https://github.com/divisionseven
 [gh-new-security-vuln]: https://github.com/divisionseven/opencode-mesh/security/advisories/new
 [opencode-repo]: https://github.com/anomalyco/opencode
+[unified-kanban-repo]: https://github.com/divisionseven/unified-kanban
 [pkg-defender]: https://github.com/divisionseven/pkg-defender
 [error-codes]: docs/troubleshooting.md
 [receipt-schema]: docs/transport.md
