@@ -51,7 +51,7 @@ async function safeRm(root: string): Promise<void> {
 describe('clientless direct fallback', () => {
   it('probe ok plus 204 posts the variant body and acks', async () => {
     const { root, restore } = await freshRoot('mesh-direct-204-');
-    // Why: audit store unwritable, delivery still completes; covers the audit-failure leg.
+    // Why: audit store unwritable, delivery still completes.
     await (await import('node:fs/promises')).mkdir(join(root, 'audit.log'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
@@ -86,7 +86,7 @@ describe('clientless direct fallback', () => {
 
   it('probe ok plus 404 terminalizes with the direct reason', async () => {
     const { root, restore } = await freshRoot('mesh-direct-404-');
-    // Why: audit store unwritable, terminalization still completes; covers the audit-failure leg.
+    // Why: audit store unwritable, terminalization still completes.
     await (await import('node:fs/promises')).mkdir(join(root, 'audit.log'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;

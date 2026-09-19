@@ -3,8 +3,6 @@
 // Claimer poll matrix over scripted deps: client shapes, direct fallback,
 // terminal detail, concurrent delete, owner disposal. Each test pins
 // observable queue behavior through pollClaimer, never internals.
-// Single module instance for the file (no per-test resets) so every leg
-// attributes; deps are reconfigured per test, owner disposal runs first.
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -80,7 +78,7 @@ describe('claimer poll matrix', () => {
 
   it('session-less client shape releases the row for redelivery', async () => {
     const { root, restore } = await freshRoot('mesh-clm-nosession-');
-    // Why: audit store unwritable, delivery still completes; covers the audit-failure leg.
+    // Why: audit store unwritable, delivery still completes.
     await mkdir(join(root, 'audit.log'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
@@ -116,7 +114,7 @@ describe('claimer poll matrix', () => {
 
   it('live registry re-attests a known sender on the injected prefix', async () => {
     const { root, restore } = await freshRoot('mesh-clm-attest-');
-    // Why: audit store unwritable, delivery still completes; covers the audit-failure leg.
+    // Why: audit store unwritable, delivery still completes.
     await mkdir(join(root, 'audit.log'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
@@ -240,7 +238,7 @@ describe('claimer poll matrix', () => {
 
   it('exhausted row terminalizes with the trail detail on the receipt', async () => {
     const { root, restore } = await freshRoot('mesh-clm-exhaust-');
-    // Why: audit store unwritable, terminalization still completes; covers the audit-failure leg.
+    // Why: audit store unwritable, terminalization still completes.
     await mkdir(join(root, 'audit.log'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
