@@ -235,3 +235,52 @@ describe('gc sweep behavior legs', () => {
     await safeRm(root); restore();
   });
 });
+
+describe('gc inbox drain edges', () => {
+  it('dangling symlink inbox entry skips without throwing', async () => {
+    const { root, restore } = await freshRoot('mesh-gc-dangle-');
+    const { mkdir, symlink } = await import('node:fs/promises');
+    await mkdir(join(root, 'inbox'), { recursive: true });
+    await symlink(join(root, 'nowhere-target'), join(root, 'inbox', 'dangling'));
+    const { runGc } = await import('../src/gc.js');
+    const res = await runGc(root);
+    expect(res.prunedInbox).toBe(0);
+    await safeRm(root); restore();
+  });
+
+  it('read-only inbox still sweeps old files without throwing', async () => {
+    const { root, restore } = await freshRoot('mesh-gc-readonly-');
+    const { mkdir, writeFile, chmod, utimes } = await import('node:fs/promises');
+    const dir = join(root, 'inbox', 'ses-ro');
+    await mkdir(dir, { recursive: true });
+    const old = new Date(Date.now() - 30 * 3600 * 1000);
+    await writeFile(join(dir, 'stale.json'), '{}');
+    await utimes(join(dir, 'stale.json'), old, old);
+    await chmod(dir, 0o555);
+    const { runGc } = await import('../src/gc.js');
+    let res;
+    try {
+      res = await runGc(root);
+    } finally {
+      await chmod(dir, 0o755);
+    }
+    expect(res.prunedInbox).toBe(1);
+    expect(res.prunedRegistry).toBe(0);
+    await safeRm(root); restore();
+  });
+
+  it('cli entry prints the sweep result as JSON', async () => {
+    const { root, restore } = await freshRoot('mesh-gc-cli-');
+    const { execFileSync } = await import('node:child_process');
+    const stdout = execFileSync(process.execPath, ['dist/gc.js'], {
+      cwd: process.cwd(),
+      env: { ...process.env, OPENCODE_MESH_ROOT: root },
+      timeout: 60_000,
+      encoding: 'utf8',
+    });
+    const result = JSON.parse(String(stdout)) as Record<string, unknown>;
+    expect(result.prunedRegistry).toBe(0);
+    expect(result.liveSkipped).toBe('no-single-port-view');
+    await safeRm(root); restore();
+  }, 90_000);
+});

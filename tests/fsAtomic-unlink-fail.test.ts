@@ -46,7 +46,6 @@ async function safeRm(root: string): Promise<void> {
 }
 
 afterEach(() => {
-  vi.resetModules();
 });
 
 describe('fsAtomic unlink-fails contention', () => {
