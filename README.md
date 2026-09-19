@@ -438,7 +438,7 @@ and community contributions.
   <strong>Last Updated: 2026-09-18</strong></br>
   <em><sub>OpenCode-Mesh is open-source and will remain free forever. If you find it valuable, please consider sponsoring its continued development and starring the repo to help others find it.</sub></em></br>
   <em><sub>— Division 7</em></sub></br></br>
-  <a href="https://x.com/MI7_OFFICIAL"><img src="https://img.shields.io/badge/X-%40MI7__OFFICIAL-black?logo=x&logoColor=white&label=&color=0D0D0D" alt="X: @MI7_OFFICIAL"></a>
+  <a href="https://x.com/divsev"><img src="https://img.shields.io/badge/X-%40divsev-black?logo=x&logoColor=white&label=&color=0D0D0D" alt="X: @divsev"></a>
   <a href="https://github.com/divisionseven"><img src="https://img.shields.io/badge/GitHub-%40divisionseven-black?logo=github&logoColor=white&label=&color=0D0D0D" alt="GitHub: @divisionseven"></a>
 </p>
 
