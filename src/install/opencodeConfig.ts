@@ -15,7 +15,15 @@ export function editPluginArrayText(text: string, desiredEntry: string, op: "add
   const want = normalizePluginEntry(desiredEntry);
   const k = text.indexOf('"plugin"');
   if (k === -1) {
-    if (op === "add") { const p = text.lastIndexOf("}"); return p === -1 ? { text, changed: false } : { text: text.slice(0, p) + `,\n  "plugin": ["${want}"]` + text.slice(p), changed: true }; }
+    // Why: empty objects take no leading comma, or the written config is invalid JSON.
+    if (op === "add") {
+      const open = text.indexOf("{");
+      const p = text.lastIndexOf("}");
+      if (open !== -1 && p > open && text.slice(open + 1, p).trim() === "") {
+        return { text: text.slice(0, open + 1) + `\n  "plugin": ["${want}"]` + text.slice(p), changed: true };
+      }
+      return p === -1 ? { text, changed: false } : { text: text.slice(0, p) + `,\n  "plugin": ["${want}"]` + text.slice(p), changed: true };
+    }
     return { text, changed: false };
   }
   let lb = text.indexOf("[", k); if (lb === -1) return { text, changed: false };

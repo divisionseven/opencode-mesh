@@ -65,6 +65,15 @@ describe('pure-unit matrix', () => {
     expect(out.text).toContain('"other"');
   });
 
+  it('add to an empty object writes valid JSON', async () => {
+    const cfg = await import('../src/install/opencodeConfig.js');
+    for (const empty of ['{}', '{\n}', '{\n  \n}']) {
+      const out = cfg.editPluginArrayText(empty, 'opencode-mesh', 'add');
+      expect(out.changed).toBe(true);
+      expect(JSON.parse(out.text)).toEqual({ plugin: ['opencode-mesh'] });
+    }
+  });
+
   it('malformed dash-s row counts neither id nor unmapped', async () => {
     const at = await import('../src/attach.js');
     expect(at.parsePsAttach('user 123 opencode -s')).toEqual({ ids: [], unmapped: 0 });

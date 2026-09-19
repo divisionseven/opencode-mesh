@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { DEFAULT_OPENCODE_PORT, FILE_MODE, LOCK_OUTER_ROUNDS, OPENCODE_PORT, ROUTE_PROBE_TIMEOUT_MS, STALE_TTL_MS, EVICT_GRACE_MS } from "./constants.js";
 import { getServerAuthHeaderSync } from "./serverAuth.js";
 import { ensureDir0700, writeAtomic } from "./fsAtomic.js";
+import { MeshError } from "./errors.js";
 import { BUILD_STAMP } from "./version.js";
 import { resolveMeshRoot, resolveRegistryPath } from "./xdg.js";
 
@@ -110,12 +111,27 @@ export async function atomicUpdateRegistry(fn: (reg: Registry) => void | Promise
 async function writeUnderLock(fn: (reg: Registry) => void | Promise<void>, meshRoot?: string): Promise<void> {
   const mod = await import("./fsAtomic.js");
   await mod.withRegistryLock(async () => {
+    // Why: corrupt-then-wipe guard. A present but unparseable store fails
+    // loud before any mutation persists. Missing files still write fresh.
+    const target = resolveRegistryPath(meshRoot);
+    let raw: string | null = null;
+    try {
+      raw = await readFile(target, "utf8");
+    } catch {
+      raw = null;
+    }
+    if (raw !== null) {
+      try {
+        JSON.parse(raw);
+      } catch {
+        throw new MeshError("STORAGE_CORRUPT", `registry unreadable, refusing write: ${target}`);
+      }
+    }
     const reg = await readRegistry(meshRoot);
     await fn(reg);
     for (const [k, v] of Object.entries(reg)) reg[k] = normalizeEntry(v as RegistryEntry);
     const pruned = pruneStale(reg);
     const root = meshRoot ?? resolveMeshRoot();
-    const target = resolveRegistryPath(meshRoot);
     await ensureDir0700(resolve(target, "..") === root ? root : resolve(target, ".."));
     // migratedAt set once on migration, not on every heartbeat — preserve existing
     let existingMigratedAt: number | undefined;
