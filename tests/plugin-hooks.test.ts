@@ -145,7 +145,16 @@ describe('plugin heartbeat tick legs', () => {
       await atomicUpdateRegistry((reg: any) => { reg['ses-hb'].updatedAt = backdated; }, root);
       await vi.advanceTimersByTimeAsync(TICK_ADVANCE_MS);
       await flushTick();
-      expect(((await readRegistry(root)) as any)['ses-hb'].updatedAt).toBeGreaterThan(backdated);
+      // Why: the tick's heartbeat write rides real fs IO and can land
+      // after the fixed flush sleep under load, so poll for the stamp
+      // instead of asserting once. A dead tick still fails at the cap.
+      let stamped = 0;
+      for (let i = 0; i < 100; i++) {
+        stamped = ((await readRegistry(root)) as any)['ses-hb'].updatedAt;
+        if (stamped > backdated) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(stamped).toBeGreaterThan(backdated);
       await hooks.dispose();
     } finally {
       vi.useRealTimers();

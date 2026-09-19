@@ -317,8 +317,13 @@ describe('db-grounded discovery', () => {
       const { peers } = await d.joinAll();
       expect(peers['ses-triple']).toBeDefined();
       const minute = Math.floor(Date.now() / 60000);
-      expect(Math.floor(db['ses-triple'].dbUpdatedAt / 60000)).toBe(minute);
-      expect(Math.floor(((await disk(root))['ses-triple'] as { updatedAt: number }).updatedAt / 60000)).toBe(minute);
+      const dbMinute = Math.floor(db['ses-triple'].dbUpdatedAt / 60000);
+      const diskMinute = Math.floor(((await disk(root))['ses-triple'] as { updatedAt: number }).updatedAt / 60000);
+      // Why: a minute boundary may fall between the fixture stamp and
+      // this read. Both stamps precede the read, so each is this minute
+      // or the one just ended; anything older still fails.
+      expect([minute, minute - 1]).toContain(dbMinute);
+      expect([minute, minute - 1]).toContain(diskMinute);
     } finally {
       delete process.env.OPENCODE_MESH_DB_PATH;
     }
