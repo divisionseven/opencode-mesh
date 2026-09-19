@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Garbage collection for stale registry plus the inbox drain owned here.
 import { execFile } from "node:child_process";
-import { readdir, readFile, rm, rmdir, stat, unlink, open } from "node:fs/promises";
+import { readdir, rm, rmdir, stat, unlink, open } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { LEGACY_OWNER_TTL_MS, STALE_TTL_MS, OUTBOX_TTL_MS, OUTBOX_MAX_ATTEMPTS } from "./constants.js";
@@ -95,19 +95,33 @@ export async function runGc(meshRoot?: string): Promise<GcResult> {
   let prunedInbox = 0;
   let prunedOutbox = 0;
   let deadLetterOutbox = 0;
-  const registryPath = resolveRegistryPath(meshRoot);
   try {
-    const data = await readFile(registryPath, "utf8");
-    const raw = JSON.parse(data) as unknown as Record<string, unknown> & { version?: number; entries?: Record<string, { updatedAt: number }> };
-    const regEntries = raw.version === 1 && raw.entries ? (raw.entries as Record<string, { updatedAt: number }>) : (raw as Record<string, { updatedAt: number }>);
-    const before = Object.keys(regEntries).length;
-    const pruned = pruneStale(regEntries as unknown as Parameters<typeof pruneStale>[0]);
-    prunedRegistry = before - Object.keys(pruned).length;
-    if (prunedRegistry > 0) {
+    // candidate snapshot is read-only; deletion re-validates each id
+    // against live data inside the writer. A concurrent join or refresh
+    // between the two can neither be deleted nor misreported.
+    const { readFile } = await import("node:fs/promises");
+    let candidates: string[] = [];
+    try {
+      const raw = JSON.parse(await readFile(resolveRegistryPath(meshRoot), "utf8")) as unknown as Record<string, unknown> & {
+        version?: number;
+        entries?: Record<string, { updatedAt: number }>;
+      };
+      const regEntries = raw.version === 1 && raw.entries ? (raw.entries as Record<string, { updatedAt: number }>) : (raw as Record<string, { updatedAt: number }>);
+      const kept = pruneStale(regEntries as unknown as Parameters<typeof pruneStale>[0]);
+      candidates = Object.keys(regEntries).filter((k) => !(k in kept));
+    } catch {
+      candidates = [];
+    }
+    let prunedCount = 0;
+    if (candidates.length > 0) {
       await atomicUpdateRegistry((reg) => {
-        for (const k of Object.keys(reg)) if (!(k in pruned)) delete reg[k];
+        // write persists the pruned live view, which drops the
+        // stale candidates on its own. Counting only: absent means pruned
+        // here or concurrently gone elsewhere, both leave the store clean.
+        for (const k of candidates) if (!((reg as Record<string, unknown>)[k])) prunedCount++;
       }, meshRoot);
     }
+    prunedRegistry = prunedCount;
   // Why: best-effort — registry read failure must not block the GC sweep.
   } catch {}
   let prunedLive = 0;

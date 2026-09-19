@@ -269,8 +269,7 @@ describe('gc inbox drain edges', () => {
     await safeRm(root); restore();
   });
 
-  it('cli entry prints the sweep result as JSON', async () => {
-    const { root, restore } = await freshRoot('mesh-gc-cli-');
+  it('cli entry prints the sweep result as JSON', async () => {    const { root, restore } = await freshRoot('mesh-gc-cli-');
     const { execFileSync } = await import('node:child_process');
     const stdout = execFileSync(process.execPath, ['dist/gc.js'], {
       cwd: process.cwd(),
@@ -283,4 +282,30 @@ describe('gc inbox drain edges', () => {
     expect(result.liveSkipped).toBe('no-single-port-view');
     await safeRm(root); restore();
   }, 90_000);
+
+  it('concurrent join between snapshot and commit survives', async () => {
+    const { root, restore } = await freshRoot('mesh-gc-race-');
+    const { open, readFile, writeFile, unlink } = await import('node:fs/promises');
+    const { constants } = await import('node:fs');
+    const target = join(root, 'registry.json');
+    await writeFile(target, JSON.stringify({
+      version: 1,
+      entries: { 'ses-old': { sessionId: 'ses-old', agent: 'a', updatedAt: Date.now() - 30 * 3600 * 1000 } },
+    }));
+    const holder = await open(join(root, 'registry.json.lock'), constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY);
+    const sweep = runGc(root);
+    await new Promise((r) => setTimeout(r, 500));
+    const doc = JSON.parse(await readFile(target, 'utf8')) as { entries?: Record<string, unknown> };
+    const entries = doc.entries ?? (doc as unknown as Record<string, unknown>);
+    entries['ses-join'] = { sessionId: 'ses-join', agent: 'a', updatedAt: Date.now() };
+    await writeFile(target, JSON.stringify(doc));
+    await holder.close();
+    await unlink(join(root, 'registry.json.lock'));
+    const res = await sweep;
+    expect(res.prunedRegistry).toBe(1);
+    const after = await readRegistry(root);
+    expect(after['ses-old']).toBeUndefined();
+    expect(after['ses-join']).toBeDefined();
+    await safeRm(root); restore();
+  }, 30_000);
 });
