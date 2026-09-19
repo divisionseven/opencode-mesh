@@ -8,6 +8,13 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-19
+
+### Added
+
+- Hardened timing-sensitive tests to deterministic outcomes (lock contention re-race, minute-boundary assertions, heartbeat stamp polling), so CI results are reliable run to run.
+- Added regression tests pinning outbox failure vocabulary, claimer poll behavior, send resolution, peers display, plugin tool paths, store shapes, and garbage-collection edges.
+
 ### Fixed
 
 - Fix purge logs to omit the resolved path and keep only the provenance label, so env-derived paths never reach clear-text output (gate: CodeQL clear-text logging check)
@@ -38,6 +45,7 @@ Initial release. Works with OpenCode 1.x (`>=1.3.13 <2.0.0`). Support for OpenCo
 
 - Report sensitive issues through the private advisory channel in `SECURITY.md`.
 
+[1.0.1]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.0.1
 [1.0.0]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.0.0
 [keep-a-changelog]: https://keepachangelog.com/en/1.1.0/
 [sem-ver]: https://semver.org/spec/v2.0.0.html

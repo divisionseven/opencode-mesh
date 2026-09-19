@@ -1,6 +1,6 @@
 {
   "name": "opencode-mesh",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A free plugin that enables agent-to-agent native communication between any OpenCode sessions.",
   "author": "divisionseven",
   "license": "MIT",
