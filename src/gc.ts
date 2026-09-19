@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Garbage collection for stale registry plus the inbox drain owned here.
 import { execFile } from "node:child_process";
-import { readdir, readFile, rmdir, stat, unlink, open } from "node:fs/promises";
+import { readdir, readFile, rm, rmdir, stat, unlink, open } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { LEGACY_OWNER_TTL_MS, STALE_TTL_MS, OUTBOX_TTL_MS, OUTBOX_MAX_ATTEMPTS } from "./constants.js";
@@ -13,15 +13,26 @@ import { resolveMeshRoot, resolveOutboxPath, resolveRegistryPath } from "./xdg.j
 const pExecFile = promisify(execFile);
 
 // trash owns user-data deletes (durability contract; same pattern as src/install/stow.ts).
-// Outbox/token artifacts regenerate safely — skipped when trash is absent, never force-deleted.
+// Trash runs first for recoverability; when both trash binaries are absent or throw,
+// removePathFallback deletes via filesystem recursive force. Outbox/token artifacts regenerate safely.
+// Why: best-effort, trash-less hosts (CI ubuntu runner) must still delete;
+// the outer GC sweep already swallows all errors, so this helper never throws.
+async function removePathFallback(p: string): Promise<void> {
+  try {
+    await rm(p, { recursive: true, force: true });
+  } catch {}
+}
+
 async function trashPath(p: string): Promise<void> {
   try {
     await pExecFile("trash", [p]);
-  } catch {
-    try {
-      await pExecFile("/usr/bin/trash", [p]);
-    } catch {}
-  }
+    return;
+  } catch {}
+  try {
+    await pExecFile("/usr/bin/trash", [p]);
+    return;
+  } catch {}
+  await removePathFallback(p);
 }
 
 // Why: owner age lives in constants beside the other TTLs; the inbox drain below owns removal.

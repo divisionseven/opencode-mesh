@@ -86,11 +86,11 @@ if (cmd === "install") {
   if (!res.changed) { console.log("already uninstalled"); }
   else { await stowedWrite(src, res.text, { mode: 0o644 }); console.log(`uninstalled ${src}`); }
   if (purge) {
-    console.log(`Purge ${root} provenance ${process.env.OPENCODE_MESH_ROOT ? "OPENCODE_MESH_ROOT" : process.env.XDG_STATE_HOME ? "XDG_STATE_HOME" : "default"}`);
+    console.log(`Purge provenance ${process.env.OPENCODE_MESH_ROOT ? "OPENCODE_MESH_ROOT" : process.env.XDG_STATE_HOME ? "XDG_STATE_HOME" : "default"}`);
     if (!yes) { console.log("add --yes to confirm purge"); process.exit(0); }
     const { purgeMeshRoot } = await import("../dist/install/stow.js");
     await purgeMeshRoot(root);
-    console.log(`purged ${root} (audit flush 5s)`);
+    console.log(`purged (audit flush 5s)`);
   }
   process.exit(0);
 } else if (cmd === "status") {

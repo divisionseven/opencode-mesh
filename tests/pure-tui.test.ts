@@ -31,6 +31,24 @@ async function safeRm(root: string): Promise<void> {
     }
   }
 }
+const DRAIN_POLL_MS = 50;
+const DRAIN_BUDGET_MS = 2000;
+async function safeRmArmed(root: string): Promise<void> {
+  const deadline = Date.now() + DRAIN_BUDGET_MS;
+  for (;;) {
+    try {
+      await rm(root, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if ((code === 'ENOTEMPTY' || code === 'EBUSY' || code === 'EPERM') && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, DRAIN_POLL_MS));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 function mockFetch204(capture?: { url?: string; headers?: Record<string, string>; body?: string; calls: Array<{ url: string; init?: RequestInit }> }) {
   return vi.fn(async (url: string, init?: RequestInit) => {
     if (capture) {
@@ -933,6 +951,267 @@ describe('edge', () => {
     if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
     if (prevBc === undefined) delete process.env.MESH_BROADCAST; else process.env.MESH_BROADCAST = prevBc;
     await safeRm(root);
+    vi.restoreAllMocks();
+  });
+});
+
+describe('presence plus tracker', () => {
+  afterEach(() => {
+    restoreFetch();
+    delete process.env.OPENCODE_MESH_DB_PATH;
+  });
+
+  it('repeat tool call inside the grace window writes nothing', async () => {
+    // given a session registered by one tool call
+    vi.resetModules();
+    const root = await mkdtemp(join(tmpdir(), 'mesh-debounce-'));
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.OPENCODE_MESH_DB_PATH = join(root, 'empty.db');
+    let getCalls = 0;
+    const stubClient = {
+      session: {
+        get: async () => { getCalls++; return { info: { agent: 'a' } }; },
+        status: async () => ({}),
+      },
+    };
+    const pluginMod = await import('../plugin/opencode-mesh.js');
+    const hooks = await (pluginMod.default as unknown as (input: unknown) => Promise<Record<string, unknown>>)({ client: stubClient });
+    const { readRegistry } = await import('../src/registry.js');
+    const sid = 'ses-debounce';
+    await (hooks['tool.execute.before'] as (i: unknown) => Promise<void>)({ sessionID: sid, agent: 'a', directory: '/tmp' });
+    const first = await readRegistry(root);
+    const firstUpdatedAt = first[sid]?.updatedAt;
+    const firstLastAction = first[sid]?.lastActionAt;
+    const firstGetCalls = getCalls;
+    // when the same tool call fires again inside the grace window
+    await (hooks['tool.execute.before'] as (i: unknown) => Promise<void>)({ sessionID: sid, agent: 'a', directory: '/tmp' });
+    // then nothing is rewritten and no identity fetch runs
+    const second = await readRegistry(root);
+    expect(second[sid]?.updatedAt).toBe(firstUpdatedAt);
+    expect(second[sid]?.lastActionAt).toBe(firstLastAction);
+    expect(getCalls).toBe(firstGetCalls);
+    await (hooks.dispose as () => Promise<void>)();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
+    await safeRmArmed(root);
+    vi.restoreAllMocks();
+  });
+
+  it('existing session registers with a heartbeat and no identity fetch', async () => {
+    // given a known caller whose heartbeat is due
+    vi.resetModules();
+    const root = await mkdtemp(join(tmpdir(), 'mesh-reg-hb-'));
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.OPENCODE_MESH_DB_PATH = join(root, 'empty.db');
+    let getCalls = 0;
+    const stubClient = {
+      session: {
+        get: async () => { getCalls++; return {}; },
+        status: async () => ({}),
+      },
+    };
+    const pluginMod = await import('../plugin/opencode-mesh.js');
+    const hooks = await (pluginMod.default as unknown as (input: unknown) => Promise<Record<string, unknown>>)({ client: stubClient });
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    const seededAt = Date.now() - 61_000;
+    await atomicUpdateRegistry((reg: any) => {
+      reg['ses-caller'] = { sessionId: 'ses-caller', agent: 'a', model: 'myprov/my-model', updatedAt: seededAt } as any;
+      reg['ses-peer'] = { sessionId: 'ses-peer', agent: 'b', model: 'myprov/my-model', updatedAt: Date.now() } as any;
+    }, root);
+    // loopback down forces the claim route so the inner send only enqueues
+    globalThis.fetch = (async () => { throw new Error('loopback down'); }) as unknown as typeof fetch;
+    const tools = hooks['tool'] as Record<string, { execute: (a: unknown, b: unknown) => Promise<unknown> }>;
+    // when the caller sends through the tool wrapper
+    const out = await tools['mesh_send'].execute({ target: 'ses-peer', text: 'hi' }, { sessionID: 'ses-caller', directory: '/tmp', agent: 'a' }) as { output: string };
+    // then the caller heartbeat advances without any identity fetch
+    const after = await readRegistry(root);
+    expect((after['ses-caller']?.updatedAt ?? 0)).toBeGreaterThan(seededAt);
+    expect(getCalls).toBe(0);
+    expect(JSON.parse(out.output).via).toBe('queued');
+    await (hooks.dispose as () => Promise<void>)();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
+    await safeRmArmed(root);
+    vi.restoreAllMocks();
+  });
+
+  it('generic timestamp title never replaces a real description', async () => {
+    // given a session stored with a real description
+    vi.resetModules();
+    const root = await mkdtemp(join(tmpdir(), 'mesh-title-gate-'));
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.OPENCODE_MESH_DB_PATH = join(root, 'empty.db');
+    const stubClient = {
+      session: {
+        get: async () => ({}),
+        status: async () => ({}),
+      },
+    };
+    const pluginMod = await import('../plugin/opencode-mesh.js');
+    const hooks = await (pluginMod.default as unknown as (input: unknown) => Promise<Record<string, unknown>>)({ client: stubClient });
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: any) => {
+      reg['ses-title'] = { sessionId: 'ses-title', agent: 'a', description: 'Real Checkout Flow', summary: 'Real Checkout Flow', title: 'Real Checkout Flow', updatedAt: Date.now() } as any;
+    }, root);
+    // when an update arrives carrying only an auto-generated timestamp title
+    await (hooks.event as (e: unknown) => Promise<void>)({ event: { type: 'session.updated', properties: { info: { id: 'ses-title', title: 'New session - 2026-09-18T12:00:00.000Z' } } } });
+    // then the stored description is untouched
+    const after = await readRegistry(root);
+    expect(after['ses-title']?.description).toBe('Real Checkout Flow');
+    await (hooks.dispose as () => Promise<void>)();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
+    await safeRmArmed(root);
+    vi.restoreAllMocks();
+  });
+
+  it('live model overwrites a stored absence', async () => {
+    // given a session stored with no model
+    vi.resetModules();
+    const root = await mkdtemp(join(tmpdir(), 'mesh-model-overwrite-'));
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.OPENCODE_MESH_DB_PATH = join(root, 'empty.db');
+    const stubClient = {
+      session: {
+        get: async () => ({ info: { agent: 'a', model: 'myprov/my-model' } }),
+        status: async () => ({}),
+      },
+    };
+    const pluginMod = await import('../plugin/opencode-mesh.js');
+    const hooks = await (pluginMod.default as unknown as (input: unknown) => Promise<Record<string, unknown>>)({ client: stubClient });
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: any) => {
+      reg['ses-model'] = { sessionId: 'ses-model', agent: 'a', description: 'Real Checkout Flow', updatedAt: Date.now() } as any;
+    }, root);
+    // when an update arrives while the live session reports a model
+    await (hooks.event as (e: unknown) => Promise<void>)({ event: { type: 'session.updated', properties: { info: { id: 'ses-model', title: 'Shipped Auth Flow' } } } });
+    // then the stored model matches the live value
+    const after = await readRegistry(root);
+    expect(after['ses-model']?.model).toBe('myprov/my-model');
+    await (hooks.dispose as () => Promise<void>)();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
+    await safeRmArmed(root);
+    vi.restoreAllMocks();
+  });
+
+  it('absent live model never clears the stored model', async () => {
+    // given a session stored with a model
+    vi.resetModules();
+    const root = await mkdtemp(join(tmpdir(), 'mesh-model-keep-'));
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.OPENCODE_MESH_DB_PATH = join(root, 'empty.db');
+    const stubClient = {
+      session: {
+        get: async () => ({}),
+        status: async () => ({}),
+      },
+    };
+    const pluginMod = await import('../plugin/opencode-mesh.js');
+    const hooks = await (pluginMod.default as unknown as (input: unknown) => Promise<Record<string, unknown>>)({ client: stubClient });
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    const stampedAt = Date.now() - 5000;
+    await atomicUpdateRegistry((reg: any) => {
+      reg['ses-model'] = { sessionId: 'ses-model', agent: 'a', model: 'myprov/my-model', description: 'Real Checkout Flow', updatedAt: stampedAt } as any;
+    }, root);
+    // when an update arrives with no live model and only an auto-generated title
+    await (hooks.event as (e: unknown) => Promise<void>)({ event: { type: 'session.updated', properties: { info: { id: 'ses-model', title: 'New session - 2026-09-18T12:00:00.000Z' } } } });
+    // then the stored model and timestamp are untouched
+    const after = await readRegistry(root);
+    expect(after['ses-model']?.model).toBe('myprov/my-model');
+    expect(after['ses-model']?.updatedAt).toBe(stampedAt);
+    await (hooks.dispose as () => Promise<void>)();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
+    await safeRmArmed(root);
+    vi.restoreAllMocks();
+  });
+
+  it('busy and retry read active while idle does not', async () => {
+    // given status strings only, no filesystem or timers
+    const { isBusyActive } = await import('../src/lastAction.js');
+    // when read as activity, then busy states count as active and idle does not
+    expect(isBusyActive('busy')).toBe(true);
+    expect(isBusyActive('retry')).toBe(true);
+    expect(isBusyActive('idle')).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it('backward clock jump keeps the newest stamp', async () => {
+    // given two competing timestamps only, no filesystem or timers
+    const { clampLastAction } = await import('../src/lastAction.js');
+    // when clamped, then the newest stamp wins in both orders
+    expect(clampLastAction(10, 5)).toBe(10);
+    expect(clampLastAction(5, 10)).toBe(10);
+    vi.restoreAllMocks();
+  });
+
+  it('forward jump past the dampening bound reads as a sleep probe', async () => {
+    // given a stored stamp plus the dampening bound only
+    const { isForwardJump } = await import('../src/lastAction.js');
+    const { LAST_ACTION_DAMPEN_MS } = await import('../src/constants.js');
+    const stored = 1000;
+    // when compared, then a leap past the bound probes true and a tick does not
+    expect(isForwardJump(stored, stored + LAST_ACTION_DAMPEN_MS + 1)).toBe(true);
+    expect(isForwardJump(stored, stored + 1)).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it('stamp read returns the number only when valid', async () => {
+    // given registry-shaped entries only, no filesystem or timers
+    const { readLastActionAt } = await import('../src/lastAction.js');
+    // when read, then a positive stamp returns and absent or negative reads null
+    expect(readLastActionAt({ lastActionAt: 5 })).toBe(5);
+    expect(readLastActionAt({})).toBeNull();
+    expect(readLastActionAt({ lastActionAt: -3 })).toBeNull();
+    vi.restoreAllMocks();
+  });
+
+  it('mesh_send registers the caller before queueing the message', async () => {
+    // given a modeled peer and a caller unknown to the registry
+    vi.resetModules();
+    const root = await mkdtemp(join(tmpdir(), 'mesh-wrapper-reg-'));
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.OPENCODE_MESH_DB_PATH = join(root, 'empty.db');
+    const stubClient = {
+      session: {
+        get: async () => ({}),
+        status: async () => ({}),
+      },
+    };
+    const pluginMod = await import('../plugin/opencode-mesh.js');
+    const hooks = await (pluginMod.default as unknown as (input: unknown) => Promise<Record<string, unknown>>)({ client: stubClient });
+    const { atomicUpdateRegistry, readRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: any) => {
+      reg['ses-peer'] = { sessionId: 'ses-peer', agent: 'b', model: 'myprov/my-model', updatedAt: Date.now() } as any;
+    }, root);
+    // loopback down forces the claim route so the inner send only enqueues
+    globalThis.fetch = (async () => { throw new Error('loopback down'); }) as unknown as typeof fetch;
+    const tools = hooks['tool'] as Record<string, { execute: (a: unknown, b: unknown) => Promise<unknown> }>;
+    // when the unknown caller sends through the wrapper
+    const out = await tools['mesh_send'].execute({ target: 'ses-peer', text: 'hi' }, { sessionID: 'ses-new', directory: '/tmp', agent: 'a' }) as { output: string };
+    // then the caller is registered and the message is queued with a row id
+    const after = await readRegistry(root);
+    expect(after['ses-new']).toBeDefined();
+    const shaped = JSON.parse(out.output) as { via: string; id: unknown };
+    expect(shaped.via).toBe('queued');
+    expect(typeof shaped.id).toBe('string');
+    await (hooks.dispose as () => Promise<void>)();
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
+    await safeRmArmed(root);
     vi.restoreAllMocks();
   });
 });

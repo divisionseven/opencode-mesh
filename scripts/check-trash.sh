@@ -31,7 +31,11 @@ if [ -n "$violations" ]; then
 fi
 # Shipped cleanup paths own the recoverable form too (gc drain owned here; stow adapter owned by src/install/stow.ts).
 grep -q "trashPath" src/gc.ts || { echo "TRASH_FAIL: gc drain must own the recoverable form" >&2; exit 1; }
-gc_stripped=$(sed 's/rmdir//g' src/gc.ts)
+grep -q "removePathFallback" src/gc.ts || { echo "TRASH_FAIL: gc fallback helper missing" >&2; exit 1; }
+grep -q 'pExecFile("trash"' src/gc.ts || { echo "TRASH_FAIL: gc must attempt the recoverable form first" >&2; exit 1; }
+# Fallback allowlist is exactly two lines: the fs/promises import line and the single
+# await rm( call inside removePathFallback. Every other bare rm site still fails.
+gc_stripped=$(sed 's/rmdir//g' src/gc.ts | grep -v 'from "node:fs/promises"' | grep -v 'await rm(')
 if rg -q -n "(^|[^[:alnum:]_])rm([^[:alnum:]_])" <<<"$gc_stripped" 2>/dev/null; then
   echo "TRASH_FAIL: gc user-data paths must name the recoverable delete tool" >&2
   exit 1

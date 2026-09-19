@@ -148,5 +148,5 @@ changelog; behavior PRs update the affected reference table.
 ## Release outline
 
 Maintainer-only: tag `v*` → TODO gate → `gen-version` → build → pack gates →
-typecheck → test → `npm pack` → `npm publish --provenance` →
+typecheck → test → `npm pack` → `npm publish` (OIDC trusted publishing) →
 `gh release create`.
