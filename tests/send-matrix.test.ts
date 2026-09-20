@@ -180,7 +180,8 @@ describe('send resolution matrix', () => {
     await safeRm(root); restore();
   });
 
-  it('broadcast oversize text stops loud with zero rows queued', async () => {    const { root, restore } = await freshRoot('mesh-send-bcast413-');
+  it('broadcast oversize text stops loud with zero rows queued', async () => {
+    const { root, restore } = await freshRoot('mesh-send-bcast413-');
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
     process.env.MESH_BROADCAST = '1';
@@ -195,6 +196,38 @@ describe('send resolution matrix', () => {
     ).then(() => null, (e: unknown) => e as { code?: string });
     expect(err?.code).toBe('PAYLOAD_TOO_LARGE');
     expect(await ob.pendingCount(['ses-A'], root)).toBe(0);
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
+
+  it('broadcast per-peer prefixed oversize reports the full failed tail', async () => {
+    const { root, restore } = await freshRoot('mesh-send-bcasttail-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    process.env.MESH_BROADCAST = '1';
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return { ok: true, status: 204 } as unknown as Response;
+      if (String(url).includes('/session/status')) return { ok: true, status: 200 } as unknown as Response;
+      return { ok: true, status: 200, json: async () => ({ agent: 'beta', model: 'myprov/my-model' }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const { atomicUpdateRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-A'] = { sessionId: 'ses-A', agent: 'beta', model: 'myprov/my-model', directory: '/tmp/a', updatedAt: Date.now() };
+      r['ses-B'] = { sessionId: 'ses-B', agent: 'beta', model: 'myprov/my-model', directory: '/tmp/b', updatedAt: Date.now() };
+    }, root);
+    const { ONE_MB } = await import('../src/constants.js');
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    const ob = await import('../src/outbox.js');
+    const out = await (mesh_send.execute as unknown as (a: unknown, c: unknown) => Promise<{ output: string }>)(
+      { target: 'all', text: 'x'.repeat(ONE_MB - 20), broadcast: true }, { sessionID: 'caller', directory: '/tmp' }
+    );
+    const body = JSON.parse(out.output) as { ok: number; peers: number; failed: Array<{ peerId: string; code?: string }> };
+    expect(body.peers).toBe(2);
+    expect(body.ok).toBe(0);
+    expect(body.failed.length).toBe(2);
+    expect(body.failed.every((f) => f.code === 'PAYLOAD_TOO_LARGE')).toBe(true);
+    expect(await ob.pendingCount(['ses-A', 'ses-B'], root)).toBe(0);
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root); restore();
   });
