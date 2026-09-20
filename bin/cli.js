@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
-// Facade for peers/send/register + install/uninstall/status.
+// Facade for peers/send/register + install/uninstall/status/gc.
 import { readFileSync, existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -17,6 +17,7 @@ function printHelp() {
   console.log("       opencode-mesh install [--dry-run]");
   console.log("       opencode-mesh uninstall [--purge] [--yes]");
   console.log("       opencode-mesh status [--json]");
+  console.log("       opencode-mesh gc [--json]");
   console.log('State root: OPENCODE_MESH_ROOT→XDG_STATE_HOME→~/.local/state/opencode/mesh');
 }
 if (args.includes("--help") || args.includes("-h") || (args[0] === "install" && args.includes("--help"))) { printHelp(); process.exit(0); }
@@ -180,4 +181,16 @@ if (cmd === "install") {
   await atomicUpdateRegistry((reg) => { reg[id] = normalizeEntry(entry); });
   const reg = await readRegistry().catch(() => ({}));
   console.log(JSON.stringify({ registered: id, peers: Object.keys(reg).length }, null, 2));
+} else if (cmd === "gc") {
+  const json = args.includes("--json");
+  const { runGc } = await import("../dist/gc.js");
+  try {
+    const res = await runGc();
+    if (json) console.log(JSON.stringify(res, null, 2));
+    else console.log(`pruned registry=${res.prunedRegistry} inbox=${res.prunedInbox} outbox=${res.prunedOutbox} live=${res.prunedLive}`);
+  } catch (e) {
+    console.error(e.message ?? String(e));
+    process.exit(1);
+  }
+  process.exit(0);
 } else { console.error(`unknown command ${cmd}`); process.exit(1); }
