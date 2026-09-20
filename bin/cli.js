@@ -12,7 +12,7 @@ const args = process.argv.slice(2);
 function printHelp() {
   console.log(`opencode-mesh ${PKG.version}`);
   console.log("Usage: opencode-mesh peers [--include-self] [--json]");
-  console.log("       opencode-mesh send <target|all> <text> [--no-reply] [--broadcast] [--json]");
+  console.log("       opencode-mesh send <target|all> <text...> [--no-reply] [--broadcast] [--json]");
   console.log("       opencode-mesh register <summary>");
   console.log("       opencode-mesh install [--dry-run]");
   console.log("       opencode-mesh uninstall [--purge] [--yes]");
@@ -20,7 +20,19 @@ function printHelp() {
   console.log("       opencode-mesh gc [--json]");
   console.log('State root: OPENCODE_MESH_ROOT→XDG_STATE_HOME→~/.local/state/opencode/mesh');
 }
-if (args.includes("--help") || args.includes("-h") || (args[0] === "install" && args.includes("--help"))) { printHelp(); process.exit(0); }
+if (args.includes("--help") || args.includes("-h")) {
+  const verbs = {
+    peers: "Usage: opencode-mesh peers [--include-self] [--json]",
+    send: "Usage: opencode-mesh send <target|all> <text...> [--no-reply] [--broadcast] [--json]",
+    register: "Usage: opencode-mesh register <summary>",
+    install: "Usage: opencode-mesh install [--dry-run]",
+    uninstall: "Usage: opencode-mesh uninstall [--purge] [--yes]",
+    status: "Usage: opencode-mesh status [--json]",
+    gc: "Usage: opencode-mesh gc [--json]",
+  };
+  if (args[0] && verbs[args[0]]) { console.log(`opencode-mesh ${PKG.version}`); console.log(verbs[args[0]]); process.exit(0); }
+  printHelp(); process.exit(0);
+}
 if (args.length === 0) { printHelp(); process.exit(2); }
 const DIST = resolve(dirname(fileURLToPath(import.meta.url)), "../dist");
 const cmd = args[0];
@@ -156,7 +168,8 @@ if (cmd === "install") {
   console.log(out.output);
 } else if (cmd === "send") {
   const { mesh_send } = await import("../dist/tools/mesh_send.js");
-  const target = args[1]; const text = args[2];
+  const target = args[1];
+  const text = args.slice(2).filter((a) => !a.startsWith("--")).join(" ");
   if (!target || !text) { console.error("send <target> <text> required"); process.exit(1); }
   const noReply = args.includes("--no-reply"); const broadcast = args.includes("--broadcast");
   // Thin facade: routing delegates to the mesh_send owner (direct prompt_async

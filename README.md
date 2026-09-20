@@ -187,7 +187,7 @@ npx opencode-mesh install
 npx opencode-mesh status
 ```
 
-**What `install` Touches**:
+**What `install` does**:
 - Adds the new `plugin` entry in `~/.config/opencode/opencode.json`
 - Adds the accompanying agent skill at `~/.config/opencode/skills/opencode-mesh/SKILL.md` (so your agents know how to use it effectively)
 - A `~/.cache` snapshot is created of your prior config for added safety.
@@ -222,7 +222,7 @@ then `npx opencode-mesh status` until `plugin: present` ([Status Reference](docs
 
 ## Quick Start (for agents, not humans)
 
-*Everything your agent needs to know is covered in the accompanying agent skill, installed automatically with the plugin.*
+*Everything your agent needs to know is covered in the accompanying [agent skill][mesh-agent-skill], installed automatically with the plugin.*
 
 Discover, send, reply. That's it.
 
@@ -443,7 +443,7 @@ and community contributions.
 ---
 
 <p align="center">
-  <strong>Last Updated: 2026-09-18</strong></br>
+  <strong>Last Updated: 2026-09-20</strong></br>
   <em><sub>OpenCode-Mesh is open-source and will remain free forever. If you find it valuable, please consider sponsoring its continued development and starring the repo to help others find it.</sub></em></br>
   <em><sub>— Division 7</em></sub></br></br>
   <a href="https://x.com/divsev"><img src="https://img.shields.io/badge/X-%40divsev-black?logo=x&logoColor=white&label=&color=0D0D0D" alt="X: @divsev"></a>
@@ -519,6 +519,7 @@ and community contributions.
 [cli-ref]: docs/cli.md
 [multi-instance-guide]: docs/getting-started.md
 [security-model]: docs/architecture.md
+[mesh-agent-skill]: skills/opencode-mesh/SKILL.md
 [package-json]: package.json
 [contributing]: CONTRIBUTING.md
 
