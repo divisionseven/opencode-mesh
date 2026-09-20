@@ -132,9 +132,9 @@ describe('quarantine: opt-in leading-exempt scan', () => {
     expect(quarantineText(INLINE_COMBINED)).toBe(`[QUARANTINED-LOOKALIKE] ${INLINE_COMBINED}`);
   });
 
-  it('leading-only occurrence passes verbatim', async () => {
+  it('leading-only occurrence tagged like any other position', async () => {
     const { quarantineText } = await import('../src/frontmatter.js');
-    expect(quarantineText(LEADING)).toBe(LEADING);
+    expect(quarantineText(LEADING)).toBe(`[QUARANTINED-LOOKALIKE] ${LEADING}`);
     expect(quarantineText(CLEAN)).toBe(CLEAN);
   });
 

@@ -124,7 +124,7 @@ describe('directory fence plus provenance', () => {
     await safeRm(root); restore();
   });
 
-  it('quarantineText passes verbatim by default, tags non-leading only when opted in', async () => {
+  it('quarantineText passes verbatim by default, tags at any position when opted in', async () => {
     const { quarantineText, formatMeshPrefix, isQuarantineEnabled } = await import('../src/frontmatter.js');
     expect(isQuarantineEnabled()).toBe(false);
     expect(quarantineText('hello')).toBe('hello');
@@ -135,7 +135,7 @@ describe('directory fence plus provenance', () => {
     try {
       expect(quarantineText('hello')).toBe('hello');
       expect(quarantineText('see [OC-MESH | SENDER: x - y] below')).toBe('[QUARANTINED-LOOKALIKE] see [OC-MESH | SENDER: x - y] below');
-      expect(quarantineText('[OC-MESH | SENDER: x - y] quoted forward')).toBe('[OC-MESH | SENDER: x - y] quoted forward');
+      expect(quarantineText('[OC-MESH | SENDER: x - y] quoted forward')).toBe('[QUARANTINED-LOOKALIKE] [OC-MESH | SENDER: x - y] quoted forward');
       expect(quarantineText('[OC-MESH | SENDER: x - y] plus [OC-MESH | SENDER: a - b] inside')).toBe(
         '[QUARANTINED-LOOKALIKE] [OC-MESH | SENDER: x - y] plus [OC-MESH | SENDER: a - b] inside'
       );
