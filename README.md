@@ -1,4 +1,4 @@
-<!-- If you're reading this, first of all, why are you reading a raw README source? More importantly though, you should definitely star this repo since you're clearly very interested in it!-->
+<!-- Why are you reading a raw README source? More importantly though, you should definitely star this repo since you're clearly very interested in it!-->
 
 <div align="center">
 
@@ -101,8 +101,8 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 
 > [!NOTE]
 > OpenCode-Mesh is currently compatible with [OpenCode v1][link-opencode] (>= 1.3.13, < 2.0.0).
-> [OpenCode v2][opencode-v2-docs] (`opencode2`) support is scheduled for a future release.
-> If you are a v2 user, please [submit an issue][gh-issues-link] so we can gauge demand.
+> Support for [OpenCode v2][opencode-v2-docs] (`opencode2`) is scheduled for a future release.
+> If you are a v2 user, please [submit an issue][gh-issues-link] so we can measure demand.
 
 *Windows is currently untested. Please submit an issue to report its functionality.*
 
