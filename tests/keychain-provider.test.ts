@@ -175,4 +175,64 @@ describe('keychain provider async fallback', () => {
       restoreUser(prev);
     }
   });
+
+  it('security success never reaches secret-tool', async () => {
+    const prev = saveUser();
+    process.env.USER = 'alice';
+    try {
+      const { asyncMock, mod } = await freshAsync();
+      asyncMock.mockImplementation((cmd: string, _args: unknown, _opts: unknown, cb: (err: Error | null, out?: string) => void) => {
+        if (String(cmd).endsWith('secret-tool')) {
+          cb(new Error('must not reach secret-tool'));
+        } else {
+          cb(null, 'mac-pw\n');
+        }
+        return undefined as never;
+      });
+      await expect(mod.getKeychainPasswordAsync()).resolves.toBe('mac-pw');
+    } finally {
+      restoreUser(prev);
+    }
+  });
+
+  it('unset USER falls back to the bare secret-tool variant', async () => {
+    const prev = saveUser();
+    delete process.env.USER;
+    try {
+      const { asyncMock, mod } = await freshAsync();
+      denySecurity(asyncMock);
+      await expect(mod.getKeychainPasswordAsync()).resolves.toBe('linux-pw');
+      const stCall = asyncMock.mock.calls.find((c) => String(c[0]).endsWith('secret-tool'));
+      const argv = (stCall as unknown[])[1] as string[];
+      expect(argv).not.toContain('account');
+    } finally {
+      restoreUser(prev);
+    }
+  });
+
+  it('async header resolves the keychain password behind the opt-in flag', async () => {
+    const prevUser = saveUser();
+    const prevFlag = process.env.OPENCODE_MESH_KEYCHAIN_PROVIDER;
+    const prevPw = process.env.OPENCODE_SERVER_PASSWORD;
+    process.env.USER = 'alice';
+    process.env.OPENCODE_MESH_KEYCHAIN_PROVIDER = '1';
+    delete process.env.OPENCODE_SERVER_PASSWORD;
+    try {
+      const { asyncMock } = await freshAsync();
+      asyncMock.mockImplementation((cmd: string, _args: unknown, _opts: unknown, cb: (err: Error | null, out?: string) => void) => {
+        if (String(cmd).endsWith('secret-tool')) cb(new Error('no store'));
+        else cb(null, 'kc-pw\n');
+        return undefined as never;
+      });
+      const auth = await import('../src/serverAuth.js');
+      const header = await auth.getServerAuthHeader();
+      expect(header).toBe(`Basic ${Buffer.from('opencode:kc-pw').toString('base64')}`);
+    } finally {
+      restoreUser(prevUser);
+      if (prevFlag === undefined) delete process.env.OPENCODE_MESH_KEYCHAIN_PROVIDER;
+      else process.env.OPENCODE_MESH_KEYCHAIN_PROVIDER = prevFlag;
+      if (prevPw === undefined) delete process.env.OPENCODE_SERVER_PASSWORD;
+      else process.env.OPENCODE_SERVER_PASSWORD = prevPw;
+    }
+  });
 });
