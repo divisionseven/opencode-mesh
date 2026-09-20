@@ -169,4 +169,20 @@ describe('fsAtomic', () => {
     expect(await readdir(root)).toEqual(['blocked']);
     await safeRm(root);
   });
+  it('registry locks land per root, never the default', async () => {
+    const rootA = await mkdtemp(join(tmpdir(), 'mesh-lockA-'));
+    const rootB = await mkdtemp(join(tmpdir(), 'mesh-lockB-'));
+    const { withRegistryLock } = await import('../src/fsAtomic.js');
+    const { existsSync } = await import('node:fs');
+    await withRegistryLock(async () => {
+      expect(existsSync(join(rootA, 'registry.json.lock'))).toBe(true);
+      return 'a';
+    }, rootA);
+    await withRegistryLock(async () => {
+      expect(existsSync(join(rootB, 'registry.json.lock'))).toBe(true);
+      return 'b';
+    }, rootB);
+    await safeRm(rootA);
+    await safeRm(rootB);
+  });
 });
