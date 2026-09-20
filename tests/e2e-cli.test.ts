@@ -113,4 +113,36 @@ describe('e2e cli', () => {
       await safeRm(home); restore();
     }
   });
+
+  it('uninstall restore brings back the pre-install config', async () => {
+    const { home, restore } = await freshHome('mesh-e2e-restore-');
+    try {
+      const { mkdir, writeFile, readFile } = await import('node:fs/promises');
+      await mkdir(join(home, '.config', 'opencode'), { recursive: true });
+      await writeFile(join(home, '.config', 'opencode', 'opencode.json'), '{\n  "theme": "dark"\n}');
+      cli(home, ['install']);
+      await writeFile(join(home, '.config', 'opencode', 'opencode.json'), '{broken,,');
+      const out = cli(home, ['uninstall', '--restore']);
+      expect(out).toContain('restored');
+      const back = JSON.parse(await readFile(join(home, '.config', 'opencode', 'opencode.json'), 'utf8')) as Record<string, unknown>;
+      expect(back.theme).toBe('dark');
+      expect(JSON.stringify(back)).not.toContain('opencode-mesh');
+    } finally {
+      await safeRm(home); restore();
+    }
+  });
+
+  it('purge removes the mesh root and names the method', async () => {
+    const { home, restore } = await freshHome('mesh-e2e-purge-');
+    try {
+      const { existsSync } = await import('node:fs');
+      cli(home, ['install']);
+      const root = process.env.OPENCODE_MESH_ROOT as string;
+      const out = cli(home, ['uninstall', '--purge', '--yes']);
+      expect(out).toMatch(/purged via (trash|system-trash|filesystem)/);
+      expect(existsSync(root)).toBe(false);
+    } finally {
+      await safeRm(home); restore();
+    }
+  });
 });

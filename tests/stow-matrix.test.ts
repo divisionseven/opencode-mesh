@@ -90,14 +90,14 @@ describe('stow detection plus census', () => {
     }
   });
 
-  it('purge resolves on a deep tmp root without throwing', async () => {
+  it('purge resolves on a deep tmp root with a method', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mesh-stow-purge-'));
     try {
       const { mkdir } = await import('node:fs/promises');
       const victim = join(root, 'a', 'b');
       await mkdir(victim, { recursive: true });
       const stow = await import('../src/install/stow.js');
-      await expect(stow.purgeMeshRoot(victim)).resolves.toBeUndefined();
+      await expect(stow.purgeMeshRoot(victim)).resolves.toMatch(/^(trash|system-trash|filesystem)$/);
       await safeRm(root);
     } finally {
       await safeRm(root).catch(() => {});

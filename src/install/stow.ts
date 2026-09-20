@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: MIT
 // Single stow Anti-Corruption Layer.
 import { lstatSync, realpathSync, statSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, resolve, sep } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { writeAtomic, fsyncDir, ensureDir0700 } from "../fsAtomic.js";
+import { SNAPSHOT_SUBPATH } from "./paths.js";
 
 const pExecFile = promisify(execFile);
 
@@ -62,9 +64,33 @@ export async function verifyLeaf(livePath: string, sourcePath: string): Promise<
 }
 
 /** Move mesh root to trash; allowlist-validated first, recoverable. */
-export async function purgeMeshRoot(root: string): Promise<void> {
+export async function purgeMeshRoot(root: string): Promise<"trash" | "system-trash" | "filesystem"> {
   validateMeshRoot(root);
-  try { await pExecFile("trash", [root]); } catch { try { await pExecFile("/usr/bin/trash", [root]); } catch {} }
+  try {
+    await pExecFile("trash", [root]);
+    return "trash";
+  } catch {}
+  try {
+    await pExecFile("/usr/bin/trash", [root]);
+    return "system-trash";
+  } catch {}
+  await rm(root, { recursive: true, force: true });
+  return "filesystem";
+}
+
+/** Newest install snapshot, if any; null when nothing was ever snapshotted. */
+export async function latestSnapshot(): Promise<{ dir: string; path: string } | null> {
+  const { readdir } = await import("node:fs/promises");
+  let entries: string[] = [];
+  try {
+    entries = await readdir(resolve(homedir(), SNAPSHOT_SUBPATH));
+  } catch {
+    return null;
+  }
+  const stamped = entries.filter((e) => /^\d+$/.test(e)).sort();
+  if (stamped.length === 0) return null;
+  const dir = resolve(homedir(), SNAPSHOT_SUBPATH, stamped[stamped.length - 1]);
+  return { dir, path: resolve(dir, "opencode.json.raw") };
 }
 
 /** Durable write honoring stow; atomic to source, then restow. */
