@@ -169,7 +169,7 @@ describe('auto-register initial enrollment', () => {
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
   });
-  it('peers persist rethrows a non-contention store error', async () => {
+  it('peers on a poisoned store resolves degraded instead of throwing', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mesh-test-peersrethrow-'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     const prevFetch = globalThis.fetch;
@@ -179,9 +179,18 @@ describe('auto-register initial enrollment', () => {
     const { mkdir } = await import('node:fs/promises');
     await mkdir(join(root, 'registry.json'));
     globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ 'ses_q': { type: 'idle' } }) })) as unknown as typeof fetch;
+    const { DatabaseSync } = await import('node:sqlite');
+    const fx = join(root, 'live.db');
+    const fxdb = new DatabaseSync(fx);
+    fxdb.exec('CREATE TABLE session(id TEXT PRIMARY KEY, directory TEXT, title TEXT, agent TEXT, time_updated INTEGER)');
+    fxdb.prepare('INSERT INTO session VALUES(?,?,?,?,?)').run('ses_q', '/tmp/q', 'Q', 'a', Date.now());
+    fxdb.close();
+    process.env.OPENCODE_MESH_DB_PATH = fx;
     try {
-      const err = await (mesh_peers.execute as any)({ includeSelf: true }, { sessionID: 'ses_q' }).catch((e: any) => e);
-      expect(err.code).not.toBeUndefined();
+      const out = await (mesh_peers.execute as any)({ includeSelf: true }, { sessionID: 'ses_q' }) as { output: string };
+      const body = JSON.parse(out.output) as { peers?: Record<string, unknown> } & Record<string, unknown>;
+      const peers = body.peers ?? body;
+      expect(peers['ses_q']).toBeDefined();
     } finally {
       globalThis.fetch = prevFetch;
     }
