@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
+const origFetch = globalThis.fetch;
 afterEach(() => {
+  globalThis.fetch = origFetch as unknown as typeof fetch;
   vi.restoreAllMocks();
   delete process.env.OPENCODE_MESH_DB_PATH;
 });
@@ -87,6 +89,30 @@ describe('peers display matrix', () => {
     const body = JSON.parse(out.output) as { peers?: Record<string, { rank: number }> } & Record<string, { rank: number }>;
     const peers = body.peers ?? body;
     expect(peers['ses-busy'].rank).toBe(1);
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
+
+  it('listing over a dead id leaves the registry byte-identical', async () => {
+    const { root, restore } = await freshRoot('mesh-peers-readonly-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ 'ses-live': { type: 'idle' } }) }) as unknown as Response) as unknown as typeof fetch;
+    const { atomicUpdateRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-live'] = { sessionId: 'ses-live', agent: 'a', updatedAt: Date.now() };
+      r['ses-dead'] = { sessionId: 'ses-dead', agent: 'd', updatedAt: Date.now() - 10 * 60 * 1000 };
+    }, root);
+    const { readFile } = await import('node:fs/promises');
+    const { resolveRegistryPath } = await import('../src/xdg.js');
+    const before = await readFile(resolveRegistryPath(root), 'utf8');
+    const { mesh_peers } = await import('../src/tools/mesh_peers.js');
+    const out = await (mesh_peers.execute as unknown as (a: unknown, c: unknown) => Promise<{ output: string }>)(
+      {}, { sessionID: 'caller' }
+    );
+    expect(Object.keys(JSON.parse(out.output))).toContain('ses-dead');
+    expect(await readFile(resolveRegistryPath(root), 'utf8')).toBe(before);
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root); restore();
   });

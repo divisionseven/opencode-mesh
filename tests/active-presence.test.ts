@@ -265,7 +265,7 @@ describe('active presence', () => {
     await safeRm(root); restore();
   });
 
-  it('4c peers never-hides — fails-before: union display with badges, persist still deletes confirmed-dead', async () => {
+  it('4c peers never-hides — fails-before: union display with badges, display never deletes', async () => {
     const { root, restore } = await freshRoot('mesh-ap4c-');
     await seed(root, { 'ses-live': 5000, 'ses-fresh': 5000, 'ses-dead': 2 * 60 * 60 * 1000 });
     const { mesh_peers } = await import('../src/tools/mesh_peers.js');
@@ -280,7 +280,7 @@ describe('active presence', () => {
     expect(peers['ses-live'].liveSource).toBe('status');
     expect(peers['ses-fresh'].liveSource).toBe('heartbeat-recent');
     expect(peers['ses-dead'].liveSource).toBe('stale');
-    expect((await disk(root))['ses-dead']).toBeUndefined();
+    expect((await disk(root))['ses-dead']).toBeDefined();
     await safeRm(root); restore();
   });
 

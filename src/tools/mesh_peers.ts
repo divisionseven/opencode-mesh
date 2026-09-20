@@ -3,9 +3,7 @@
 // Ranked union display: attach-first decision-tree ordering, rank-last.
 import { tool } from "@opencode-ai/plugin";
 import { ACTIVE_WINDOW_MS } from "../constants.js";
-import { isLockContention } from "../fsAtomic.js";
 import { isGenericTitle } from "../identity.js";
-import { persistConfirmedDead } from "../registry.js";
 
 /** L1 directory score: exact outranks ancestor outranks basename outranks miss; miss scores zero, stays listed. */
 export function scoreDirectory(candidateDirs: Array<string | undefined>, query: string | undefined): number {
@@ -70,7 +68,7 @@ export const mesh_peers = tool({
     // Display reads the join, never raw registry alone. Lazy import defers the
     // sqlite edge to call time so peers loads on sqlite-less hosts.
     const { joinAll } = await import("../discovery.js");
-    const { peers: joined, tcpMap, degraded } = await joinAll();
+    const { peers: joined, degraded } = await joinAll();
     const reason = degraded ? "registry-only" : undefined;
     // Why: rank-last L0-L4 scoring — compat args feed stages, never remove ids.
     const scored: Array<{ id: string; entry: Record<string, unknown>; key: [number, number, number, number, number, number] }> = [];
@@ -115,15 +113,6 @@ export const mesh_peers = tool({
         rank: i + 1,
       };
     });
-    // Opportunistic persist via single writer; claimer leg never drives deletion.
-    // Contention skips persist; ranked union returns byte-identical either way.
-    if (!degraded) {
-      try {
-        await persistConfirmedDead(tcpMap);
-      } catch (err) {
-        if (!isLockContention(err)) throw err;
-      }
-    }
     const meta = { count: Object.keys(merged).length, degraded, reason, activeWindowMs: ACTIVE_WINDOW_MS };
     // preserve backward compat: return merged map, but include meta when degraded for harness
     if (degraded) return { output: JSON.stringify({ peers: merged, meta }, null, 2) };
