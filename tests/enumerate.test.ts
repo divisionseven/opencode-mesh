@@ -109,10 +109,93 @@ describe('enumerateServers', () => {
   });
 
   it('ok probe with an empty body reads an empty fingerprint', async () => {
-    globalThis.fetch = (async () => ({ ok: true, status: 200, text: async () => '' })) as unknown as typeof fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (k: string) => (k === 'content-length' ? '0' : null) },
+      text: async () => '',
+    })) as unknown as typeof fetch;
     const { probePort } = await import('../src/enumerate.js');
     const sight = await probePort(4096, 500);
     expect(sight.reachable).toBe(true);
     expect(sight.fingerprint).toBe('');
+  });
+
+  it('oversized content-length skips the body without buffering', async () => {
+    const { ENUM_MAX_BODY } = await import('../src/enumerate.js');
+    let buffered = false;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: (k: string) => (k === 'content-length' ? String(ENUM_MAX_BODY + 1) : null) },
+      text: async () => {
+        buffered = true;
+        return 'x'.repeat(1024);
+      },
+    })) as unknown as typeof fetch;
+    const { probePort } = await import('../src/enumerate.js');
+    const sight = await probePort(4096, 500);
+    expect(sight.reachable).toBe(true);
+    expect(sight.fingerprint).toBe('');
+    expect(buffered).toBe(false);
+  });
+
+  it('streaming body past the cap stops reading and skips the fingerprint', async () => {
+    const { ENUM_MAX_BODY } = await import('../src/enumerate.js');
+    const big = new TextEncoder().encode('y'.repeat(1024));
+    let reads = 0;
+    const reader = {
+      read: async () => {
+        reads += 1;
+        if (reads * 1024 > ENUM_MAX_BODY + 1024) return { done: true, value: undefined };
+        return { done: false, value: big };
+      },
+      releaseLock: () => {},
+      cancel: async () => {},
+    };
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      body: { getReader: () => reader },
+      text: async () => {
+        throw new Error('must not buffer a streaming body');
+      },
+    })) as unknown as typeof fetch;
+    const { probePort } = await import('../src/enumerate.js');
+    const sight = await probePort(4096, 500);
+    expect(sight.reachable).toBe(true);
+    expect(sight.fingerprint).toBe('');
+    expect(reads * 1024).toBeLessThanOrEqual(ENUM_MAX_BODY + 2048);
+  });
+
+  it('streaming body under the cap fingerprints the full text', async () => {
+    const { createHash } = await import('node:crypto');
+    const text = '{"small":true}';
+    const chunk = new TextEncoder().encode(text);
+    let calls = 0;
+    const reader = {
+      read: async () => {
+        calls += 1;
+        if (calls === 2) return { done: false, value: undefined };
+        if (calls > 3) return { done: true, value: undefined };
+        return { done: false, value: chunk };
+      },
+      releaseLock: () => {},
+      cancel: async () => {},
+    };
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: {},
+      body: { getReader: () => reader },
+      text: async () => {
+        throw new Error('must not buffer a streaming body');
+      },
+    })) as unknown as typeof fetch;
+    const { probePort } = await import('../src/enumerate.js');
+    const sight = await probePort(4096, 500);
+    expect(sight.reachable).toBe(true);
+    expect(sight.fingerprint).toBe(createHash('sha1').update(text + text).digest('hex'));
   });
 });
