@@ -48,14 +48,11 @@ let lastSnapshot: AttachSnapshot | null = null;
 let attachTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
- * Attached set as union of ps plus guarded status ids; unknown yields ps alone.
+ * Attached set from ps alone. Status ids never attach: an idle-but-listed
+ * session would otherwise stay expiry-exempt forever.
  */
-export function computeAttachedSet(psIds: string[], status: Record<string, { type: string }> | null): string[] {
-  const out = [...psIds];
-  if (status) {
-    for (const id of Object.keys(status)) if (!out.includes(id)) out.push(id);
-  }
-  return out;
+export function computeAttachedSet(psIds: string[]): string[] {
+  return [...psIds];
 }
 
 /**
@@ -93,7 +90,7 @@ export async function pollAttachOnce(opts?: {
     } catch {
       status = null;
     }
-    const attached = computeAttachedSet(ps.ids, status);
+    const attached = computeAttachedSet(ps.ids);
     const snap: AttachSnapshot = { attached, unmapped: ps.unmapped, at: now };
     lastSnapshot = snap;
     try {
