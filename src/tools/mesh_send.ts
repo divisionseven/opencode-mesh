@@ -266,7 +266,8 @@ export const mesh_send = tool({
           const status = (e as { status?: number })?.status ?? (e instanceof MeshError ? e.status : undefined);
           const didYouMean = (e as { didYouMean?: string[] })?.didYouMean;
           results.push({ peerId: pid, ok: false, error: String((e as Error).message ?? e), code, status, didYouMean });
-          if (code === "PAYLOAD_TOO_LARGE" || status === 413) throw e;
+          // Why: no mid-fanout abort. Every peer reports, even when the
+          // failure is identical across peers; the tail is data, not noise.
         }
       }
       const okCount = results.filter((r) => r.ok).length;

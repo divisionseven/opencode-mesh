@@ -333,7 +333,7 @@ describe('broadcast gate: default-off rejects before fan-out', () => {
     }
   });
 
-  it('broadcast rethrows a per-peer 413 instead of capturing it', async () => {
+  it('broadcast captures a per-peer 413 in the failed tail instead of rethrowing', async () => {
     const { root, restore } = await freshRoot('mesh-bc-413-');
     const prevBc = saveBroadcastEnv();
     process.env.MESH_BROADCAST = '1';
@@ -359,15 +359,18 @@ describe('broadcast gate: default-off rejects before fan-out', () => {
         return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
       }) as unknown as typeof fetch;
       const { mesh_send } = await import('../src/tools/mesh_send.js');
-      await expect(
-        (mesh_send.execute as (...a: never[]) => Promise<{ output: string }>)(
-          { target: 'all', text: 'fanout', broadcast: true } as never,
-          { sessionID: 'bc413-caller', directory: '/tmp' } as never,
-        ),
-      ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+      const out = await (mesh_send.execute as (...a: never[]) => Promise<{ output: string }>)(
+        { target: 'all', text: 'fanout', broadcast: true } as never,
+        { sessionID: 'bc413-caller', directory: '/tmp' } as never,
+      );
+      const tail = JSON.parse(String(out.output)) as { ok: number; failed: Array<{ peerId: string; code?: string }> };
+      expect(tail.ok).toBe(1);
+      expect(tail.failed.length).toBe(1);
+      expect(tail.failed[0].peerId).toBe('bc413-peer');
+      expect(tail.failed[0].code).toBe('PAYLOAD_TOO_LARGE');
       // Queue-before-probe second half: the same shape minus the model queues
-      // instead of rethrowing — the 413 rethrow is POST-behind, unreachable
-      // for unknown-identity peers, and the claim row proves the degrade.
+      // instead of throwing — the claim row proves the degrade. The broadcast
+      // above already queued one row for this peer, so the count is two.
       posted.length = 0;
       const deferOut = JSON.parse(
         String((await (mesh_send.execute as (...a: never[]) => Promise<{ output: string }>)(
@@ -379,7 +382,7 @@ describe('broadcast gate: default-off rejects before fan-out', () => {
       expect(deferOut.via).toBe('queued');
       expect(posted).toEqual([]);
       const ob = await import('../src/outbox.js');
-      expect(await ob.pendingCount(['bc413-defer'], root)).toBe(1);
+      expect(await ob.pendingCount(['bc413-defer'], root)).toBe(2);
     } finally {
       if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
       restoreBroadcastEnv(prevBc);
