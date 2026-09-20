@@ -3,11 +3,13 @@
 // Bounded local server enumeration.
 // Env plus default port in, sightings with fingerprint out; bind-ownership arbitrates incarnations.
 import { createHash } from "node:crypto";
-import { OPENCODE_PORT } from "./constants.js";
+import { ONE_MB, OPENCODE_PORT } from "./constants.js";
 import { getServerAuthHeaderSync } from "./serverAuth.js";
 
 export const ENUM_MAX_PORTS = 8;
 export const ENUM_TIMEOUT_MS = 1000;
+/** Per-body cap: the probe keeps a hash only, so larger bodies never buffer. */
+export const ENUM_MAX_BODY = ONE_MB;
 
 export interface ServerSight {
   port: number;
@@ -28,6 +30,37 @@ function enumPorts(explicit?: number[]): number[] {
   return [...new Set(base)].slice(0, ENUM_MAX_PORTS);
 }
 
+/** Read at most ENUM_MAX_BODY bytes; over-cap or unreadable bodies hash empty. */
+async function readBoundedBody(res: Response): Promise<string> {
+  const lenRaw = res.headers?.get?.("content-length") ?? null;
+  const len = lenRaw === null ? NaN : Number(lenRaw);
+  if (Number.isFinite(len) && len > ENUM_MAX_BODY) return "";
+  const getReader = (res.body as { getReader?: () => unknown } | null)?.getReader;
+  if (typeof getReader !== "function") return res.ok ? await res.text() : "";
+  const reader = (getReader.call(res.body) as {
+    read: () => Promise<{ done?: boolean; value?: Uint8Array }>;
+    releaseLock: () => void;
+    cancel?: () => Promise<void>;
+  });
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value?.byteLength ?? 0;
+      if (total > ENUM_MAX_BODY) {
+        await reader.cancel?.().catch(() => {});
+        return "";
+      }
+      if (value) chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /** Probe one loopback port; per-port budget keeps hung servers from stalling. */
 export async function probePort(port: number, timeoutMs: number = ENUM_TIMEOUT_MS): Promise<ServerSight> {
   const t0 = Date.now();
@@ -36,7 +69,7 @@ export async function probePort(port: number, timeoutMs: number = ENUM_TIMEOUT_M
     const headers: Record<string, string> = {};
     if (auth) headers.Authorization = auth;
     const res = await fetch(`http://127.0.0.1:${port}/session/status`, { headers, signal: AbortSignal.timeout(timeoutMs) });
-    const body = res.ok ? await res.text() : "";
+    const body = res.ok ? await readBoundedBody(res) : "";
     return {
       port,
       reachable: res.ok,
