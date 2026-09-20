@@ -584,7 +584,7 @@ describe('docs plus single-source gates', () => {
     await safeRm(root); restore();
   });
 
-  it('pollAttachOnce unions a status-only id behind the ps set', async () => {
+  it('pollAttachOnce leaves a status-only id out of the ps set', async () => {
     const { root, restore } = await freshRoot('mesh-att-union-');
     const { pollAttachOnce } = await import('../src/attach.js');
     const snap = await pollAttachOnce({
@@ -592,7 +592,7 @@ describe('docs plus single-source gates', () => {
       psText: 'u 1 0:00 opencode -s ses-ps',
       statusMap: { 'ses-ps': { type: 'idle' }, 'ses-tcp': { type: 'idle' } },
     });
-    expect(snap.attached).toEqual(['ses-ps', 'ses-tcp']);
+    expect(snap.attached).toEqual(['ses-ps']);
     await safeRm(root); restore();
   });
 
@@ -615,12 +615,12 @@ describe('docs plus single-source gates', () => {
     await safeRm(root); restore();
   });
 
-  it('pollAttachOnce without seams joins a live status view', async () => {
+  it('pollAttachOnce without seams ignores a live status view', async () => {
     const { root, restore } = await freshRoot('mesh-att-tcpview-');
     globalThis.fetch = (async () => ({ ok: true, status: 200, json: async () => ({ 'ses-tcp': { type: 'idle' } }) })) as unknown as typeof fetch;
     const { pollAttachOnce } = await import('../src/attach.js');
     const snap = await pollAttachOnce({ meshRoot: root, psText: '' });
-    expect(snap.attached).toEqual(['ses-tcp']);
+    expect(snap.attached).toEqual([]);
     await safeRm(root); restore();
   });
 
@@ -720,4 +720,16 @@ describe('docs plus single-source gates', () => {
     await expect(stampLastAction('ses-locked', { meshRoot: root })).resolves.toBeUndefined();
     await safeRm(root); restore();
   }, 60_000);
+
+  it('status-only ids never attach, ps ids do', async () => {
+    const { root, restore } = await freshRoot('mesh-attach-psonly-');
+    const { pollAttachOnce } = await import('../src/attach.js');
+    const snap = await pollAttachOnce({
+      meshRoot: root,
+      psText: 'user 123 opencode -s ses-ps',
+      statusMap: { 'ses-ps': { type: 'idle' }, 'ses-statusonly': { type: 'idle' } },
+    });
+    expect(snap.attached).toEqual(['ses-ps']);
+    await safeRm(root); restore();
+  });
 });
