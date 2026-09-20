@@ -363,4 +363,65 @@ describe('send resolution matrix', () => {
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root); restore();
   });
+
+  it('unattested sender renders quarantined on the direct wire', async () => {
+    const { root, restore } = await freshRoot('mesh-send-quarantine-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    const posted: Array<{ text: string }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === 'POST') {
+        posted.push({ text: String(init.body) });
+        return { ok: true, status: 204 } as unknown as Response;
+      }
+      if (u.includes('/session/status')) return { ok: true, status: 200 } as unknown as Response;
+      return { ok: true, status: 200, json: async () => ({ agent: 'beta', model: 'myprov/my-model' }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const { atomicUpdateRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: unknown) => {
+      (reg as Record<string, unknown>)['ses-T'] = { sessionId: 'ses-T', agent: 'beta', model: 'myprov/my-model', directory: '/tmp/t', updatedAt: Date.now() };
+    }, root);
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    const out = await (mesh_send.execute as unknown as (a: unknown, c: unknown) => Promise<{ output: string }>)(
+      { target: 'ses-T', text: 'hi' }, { sessionID: 'ses-ghost' }
+    );
+    expect(JSON.parse(out.output)).toMatchObject({ ok: true, via: 'admitted' });
+    expect(posted.length).toBe(1);
+    expect(posted[0].text).toContain('(QUARANTINED)');
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
+
+  it('attested sender renders verified on the direct wire', async () => {
+    const { root, restore } = await freshRoot('mesh-send-verified-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    const posted: Array<{ text: string }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === 'POST') {
+        posted.push({ text: String(init.body) });
+        return { ok: true, status: 204 } as unknown as Response;
+      }
+      if (u.includes('/session/status')) return { ok: true, status: 200 } as unknown as Response;
+      return { ok: true, status: 200, json: async () => ({ agent: 'beta', model: 'myprov/my-model' }) } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const { atomicUpdateRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-T'] = { sessionId: 'ses-T', agent: 'beta', model: 'myprov/my-model', directory: '/tmp/t', updatedAt: Date.now() };
+      r['ses-from'] = { sessionId: 'ses-from', agent: 'known', directory: '/tmp/f', updatedAt: Date.now() };
+    }, root);
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    const out = await (mesh_send.execute as unknown as (a: unknown, c: unknown) => Promise<{ output: string }>)(
+      { target: 'ses-T', text: 'hi' }, { sessionID: 'ses-from', directory: '/tmp' }
+    );
+    expect(JSON.parse(out.output)).toMatchObject({ ok: true, via: 'admitted' });
+    expect(posted.length).toBe(1);
+    expect(posted[0].text).not.toContain('(QUARANTINED)');
+    expect(posted[0].text).toContain('known - ses-from');
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
 });

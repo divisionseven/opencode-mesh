@@ -126,6 +126,7 @@ describe('delivery: wire bytes identical to PromptInput subset', () => {
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: any) => {
       reg['wire-target'] = { sessionId: 'wire-target', agent: 'a', model: 'myprov/my-model', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' } as any;
+      reg['wire-caller'] = { sessionId: 'wire-caller', agent: 'build', updatedAt: Date.now() } as any;
     }, root);
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = mockStatusAnd204(calls);
@@ -531,7 +532,7 @@ describe('delivery: any-count ToolContext', () => {
     expect('agent' in body).toBe(true);
     expect(body.agent).toBe('peer-agent');
     expect(Object.keys(body).sort()).toEqual(['agent', 'messageID', 'model', 'parts']);
-    expect(body.parts[0].text).toContain('[OC-MESH | SENDER: custom-agent-xyz - ses-custom-xyz]');
+    expect(body.parts[0].text).toContain('[OC-MESH | SENDER (QUARANTINED): custom-agent-xyz - ses-custom-xyz]');
     // Sender registration changes nothing on the wire: the receiver triple
     // still flows (the sender key never reaches the body).
     const { atomicUpdateRegistry: atomic2 } = await import('../src/registry.js');

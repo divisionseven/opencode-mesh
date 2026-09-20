@@ -251,12 +251,12 @@ describe('pure TUI-identical — harness gates', () => {
     expect(bodyCaptured).not.toBeNull();
     expect(Array.isArray(bodyCaptured.parts)).toBe(true);
     expect(bodyCaptured.parts[0].type).toBe('text');
-    expect(bodyCaptured.parts[0].text.toLowerCase()).toContain('[oc-mesh | sender:');
+    expect(bodyCaptured.parts[0].text.toLowerCase()).toContain('[oc-mesh | sender (quarantined):');
     expect(bodyCaptured.parts[0].text).toContain('hello prompt');
     // receiver triple: the wire agent names the receiver (`a`), never the
     // sender, while the prefix keeps raw attribution.
     expect(bodyCaptured.agent).toBe('a');
-    expect(bodyCaptured.parts[0].text).toContain('[OC-MESH | SENDER: unknown - caller-prompt]');
+    expect(bodyCaptured.parts[0].text).toContain('[OC-MESH | SENDER (QUARANTINED): unknown - caller-prompt]');
     expect(bodyCaptured).toHaveProperty('messageID');
     const { isMsgId } = await import('../src/outbox.js');
     expect(isMsgId(bodyCaptured.messageID)).toBe(true);
@@ -278,7 +278,7 @@ describe('pure TUI-identical — harness gates', () => {
     await (ms4.execute as any)({ target: 'prompt-target', text: 'quiet prompt', silent: true }, { sessionID: 'caller-prompt', directory: '/tmp' });
     expect(silentCaptured.noReply).toBe(true);
     // silent direct leg renders the SILENT marker with the body verbatim
-    expect(silentCaptured.parts[0].text).toBe('[OC-MESH | SENDER (SILENT): unknown - caller-prompt]\n\nquiet prompt');
+    expect(silentCaptured.parts[0].text).toBe('[OC-MESH | SENDER (SILENT) (QUARANTINED): unknown - caller-prompt]\n\nquiet prompt');
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
     await safeRm(root);

@@ -155,6 +155,7 @@ describe('quarantine: both-legs passthrough at default', () => {
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['q-peer'] = { sessionId: 'q-peer', agent: 'a', model: 'myprov/my-model', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };
+      (reg as Record<string, unknown>)['q-caller'] = { sessionId: 'q-caller', agent: 'build', updatedAt: Date.now() };
     }, root);
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = stub204(calls);

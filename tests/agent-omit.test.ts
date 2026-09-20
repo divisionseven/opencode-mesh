@@ -97,7 +97,7 @@ describe('agent omit matrix', () => {
       const body = await directBody(root, unknown);
       expect('agent' in body).toBe(true);
       expect(body.agent).toBe('peer-agent');
-      expect(body.parts).toEqual([{ type: 'text', text: `[OC-MESH | SENDER: ${unknown} - omit-caller]\n\nhi omit` }]);
+      expect(body.parts).toEqual([{ type: 'text', text: `[OC-MESH | SENDER (QUARANTINED): ${unknown} - omit-caller]\n\nhi omit` }]);
       expect('noReply' in body).toBe(false);
     }
     await safeRm(root); restore();
@@ -119,7 +119,7 @@ describe('agent omit matrix', () => {
     const body = JSON.parse(String(calls.find((c) => c.url.includes('prompt_async'))!.init?.body));
     expect('agent' in body).toBe(true);
     expect(body.agent).toBe('peer-agent');
-    expect(body.parts).toEqual([{ type: 'text', text: '[OC-MESH | SENDER (SILENT): alpha - omit-caller]\n\nhi omit' }]);
+    expect(body.parts).toEqual([{ type: 'text', text: '[OC-MESH | SENDER (SILENT) (QUARANTINED): alpha - omit-caller]\n\nhi omit' }]);
     expect(body.noReply).toBe(true);
     await safeRm(root); restore();
   });
