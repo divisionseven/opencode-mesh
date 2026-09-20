@@ -243,7 +243,7 @@ describe('per-type expiry boundaries', () => {
     await safeRm(root); restore();
   });
 
-  it('T10b 59s stays attached; T10c 61s transitions on a successful view', async () => {
+  it('T10b 59s stays attached; T10c 61s stays without a successful view', async () => {
     const { root, restore } = await freshRoot('mesh-t10bc-');
     const now = Date.now();
     const at = await import('../src/attach.js');
@@ -255,7 +255,7 @@ describe('per-type expiry boundaries', () => {
     const { readRegistry } = await import('../src/registry.js');
     const reg = (await readRegistry(root)) as unknown as Record<string, Record<string, unknown>>;
     expect(reg['ses-59'].attached).toBe(true);
-    expect(reg['ses-61'].attached).toBe(false);
+    expect(reg['ses-61'].attached).toBe(true);
     await safeRm(root); restore();
   });
 
@@ -721,8 +721,7 @@ describe('docs plus single-source gates', () => {
     await safeRm(root); restore();
   }, 60_000);
 
-  it('status-only ids never attach, ps ids do', async () => {
-    const { root, restore } = await freshRoot('mesh-attach-psonly-');
+  it('status-only ids never attach, ps ids do', async () => {    const { root, restore } = await freshRoot('mesh-attach-psonly-');
     const { pollAttachOnce } = await import('../src/attach.js');
     const snap = await pollAttachOnce({
       meshRoot: root,
@@ -730,6 +729,19 @@ describe('docs plus single-source gates', () => {
       statusMap: { 'ses-ps': { type: 'idle' }, 'ses-statusonly': { type: 'idle' } },
     });
     expect(snap.attached).toEqual(['ses-ps']);
+    await safeRm(root); restore();
+  });
+
+  it('empty view keeps an attached marker past grace', async () => {
+    const { root, restore } = await freshRoot('mesh-att-emptyview-');
+    const now = Date.now();
+    await seed(root, {
+      'ses-held': { sessionId: 'ses-held', agent: 'a', updatedAt: now, attached: true, attachedAt: now - 10 * 60 * 1000 },
+    });
+    const { pollAttachOnce } = await import('../src/attach.js');
+    const { readRegistry } = await import('../src/registry.js');
+    await pollAttachOnce({ meshRoot: root, psText: '', statusMap: {} });
+    expect(((await readRegistry(root)) as any)['ses-held'].attached).toBe(true);
     await safeRm(root); restore();
   });
 });
