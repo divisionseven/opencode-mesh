@@ -19,14 +19,11 @@ export function isQuarantineEnabled(): boolean {
   return process.env.MESH_QUARANTINE === "1";
 }
 
-/** Tag non-leading lookalikes when enabled; else return text verbatim. */
+/** Tag lookalikes at any position when enabled; else return text verbatim. */
 export function quarantineText(text: string): string {
   if (!isQuarantineEnabled()) return text;
-  const re = /\[OC-MESH \| SENDER(?: \(SILENT\))?(?: \(QUARANTINED\))?:/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > 0) return `[QUARANTINED-LOOKALIKE] ${text}`;
-  }
+  const re = /\[OC-MESH \| SENDER(?: \(SILENT\))?(?: \(QUARANTINED\))?:/i;
+  if (re.test(text)) return `[QUARANTINED-LOOKALIKE] ${text}`;
   return text;
 }
 
