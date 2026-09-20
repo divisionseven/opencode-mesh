@@ -131,7 +131,6 @@ describe('e2e cli', () => {
       await safeRm(home); restore();
     }
   });
-
   it('purge removes the mesh root and names the method', async () => {
     const { home, restore } = await freshHome('mesh-e2e-purge-');
     try {
@@ -141,6 +140,21 @@ describe('e2e cli', () => {
       const out = cli(home, ['uninstall', '--purge', '--yes']);
       expect(out).toMatch(/purged via (trash|system-trash|filesystem)/);
       expect(existsSync(root)).toBe(false);
+    } finally {
+      await safeRm(home); restore();
+    }
+  });
+
+  it('restore without snapshots fails loud with exit one', async () => {
+    const { home, restore } = await freshHome('mesh-e2e-norestore-');
+    try {
+      let code = 0;
+      try {
+        cli(home, ['uninstall', '--restore']);
+      } catch (e) {
+        code = (e as { status?: number }).status ?? 1;
+      }
+      expect(code).toBe(1);
     } finally {
       await safeRm(home); restore();
     }
