@@ -13,11 +13,9 @@
 
 [![Release][badge-release]][link-releases]
 [![License][badge-license]][link-license]
-[![Node][badge-node]][link-repo]
-[![opencode][badge-opencode]][opencode-repo]
 [![Coverage][badge-coverage]][link-coverage]
 [![Build][badge-build]][link-ci]
-<!-- [![npm][badge-npm-downloads]][link-npm] -->
+[![npm][badge-npm-downloads]][link-npm]
 
 [Docs][docs-index] • [Install](#installation) • [Changelog][docs-changelog] • [OpenCode][link-opencode] • [Sponsor][gh-sponsors-link]
 
@@ -46,7 +44,7 @@
 
 <div align="center">
   <a href="docs/assets/demo/1-0-1/960x525_20fps/oc-mesh-demo.gif"><img src="docs/assets/demo/1-0-1/960x525_20fps/oc-mesh-demo.gif" alt="OpenCode-Mesh Demo | Two separate OpenCode sessions in separate terminals messaging back and forth, with the messages 'waking-up' the agents when idle" width="auto" /></a>
-  <p><sub><em>Two separate OpenCode sessions messaging back and forth autonomously, waking each other when messaged. No loops (or humans) needed.</em></sub></p>
+  <p><sub><em>Two separate OpenCode sessions messaging back and forth autonomously, waking each other when messaged.</br>No loops (or humans) needed.</em></sub></p>
 </div>
 
 ***The mesh turns isolated sessions into a connected team.***
@@ -62,7 +60,7 @@ Mesh messages can *"wake up"* other agents (if desired), triggering their turn t
 - **Knowledge Accumulation**: Research sessions send their findings to a shared knowledge base session. Over time, that session builds a growing corpus of context. When a new question arrives, it already has the history of everything your team has investigated.
 
 <details>
-<summary><strong>The "Orchestrator" Setup: Our favorite use case (expand)</strong></summary>
+<summary><strong>The "Orchestrator" Setup: Our favorite use case</strong></summary>
 
 <div align="center">
 
@@ -99,18 +97,23 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 
 ## Installation
 
-> [!NOTE]
-> OpenCode-Mesh is currently compatible with [OpenCode v1][link-opencode] (>= 1.3.13, < 2.0.0).
-> Support for [OpenCode v2][opencode-v2-docs] (`opencode2`) is scheduled for a future release.
-> If you are a v2 user, please [submit an issue][gh-issues-link] so we can measure demand.
-
-*Windows is currently untested. Please submit an issue to report its functionality.*
+**Platform Support:**
 
 [![Platforms][platforms-macos-badge]][link-releases]
 [![Platforms][platforms-linux-badge]][link-releases]
 [![Platforms][platforms-windows-badge]][link-releases]
 
-**Prerequisites:**
+*Windows is currently untested. Please submit an issue to report its functionality.*
+
+> [!NOTE]
+> OpenCode-Mesh is currently compatible with [OpenCode v1][link-opencode] (>= 1.3.13, < 2.0.0).
+> Support for [OpenCode v2][opencode-v2-docs] (`opencode2`) is scheduled for a future release.
+> If you are a v2 user, please [submit an issue][gh-issues-link] so we can more accurately gauge demand.
+
+### Prerequisites:
+
+[![Node][badge-node]][link-repo]
+[![opencode][badge-opencode]][opencode-repo]
 
 <details>
 <summary>Node >= 22</summary>
@@ -456,7 +459,7 @@ and community contributions.
 [badge-node]: https://img.shields.io/badge/node-%3E%3D22-brightgreen?logo=node.js&logoColor=white&label=Node&color=0D0D0D
 [badge-opencode]: https://img.shields.io/badge/opencode-%3E%3D1.3.13-blue?logo=opencode&logoColor=white&label=OpenCode&color=0D0D0D
 [badge-build]: https://img.shields.io/github/actions/workflow/status/divisionseven/opencode-mesh/ci.yml?logo=github&logoColor=white&label=Build&color=0D0D0D
-<!-- [badge-npm-downloads]: https://img.shields.io/npm/dm/opencode-mesh?logo=npm&logoColor=white&label=Downloads&color=0D0D0D -->
+[badge-npm-downloads]: https://img.shields.io/npm/dm/opencode-mesh?logo=npm&logoColor=white&label=Downloads&color=0D0D0D
 [badge-coverage]: https://img.shields.io/codecov/c/github/divisionseven/opencode-mesh?logo=codecov&logoColor=white&label=Coverage&color=0D0D0D
 
 <!-- Header Badge Links -->
@@ -465,7 +468,7 @@ and community contributions.
 [link-license]: LICENSE
 [link-repo]: https://github.com/divisionseven/opencode-mesh
 [link-ci]: https://github.com/divisionseven/opencode-mesh/actions/workflows/ci.yml
-<!-- [link-npm]: https://www.npmjs.com/package/opencode-mesh -->
+[link-npm]: https://www.npmjs.com/package/opencode-mesh
 [link-coverage]: https://codecov.io/gh/divisionseven/opencode-mesh
 [link-opencode]: https://opencode.ai
 
