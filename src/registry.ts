@@ -149,7 +149,7 @@ async function writeUnderLock(fn: (reg: Registry) => void | Promise<void>, meshR
     await writeAtomic(target, JSON.stringify(doc, null, 2), {
       mode: FILE_MODE,
     });
-  });
+  }, meshRoot);
 }
 
 /** Read registry from the mesh root. */

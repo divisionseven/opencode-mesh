@@ -131,8 +131,8 @@ async function reapVerified(lockPath: string, decided: string): Promise<boolean>
  * Registry-only RMW lock; O_EXCL create plus jitter retries own contention.
  * Crash-safe exclusion for single-writer updates.
  */
-export async function withRegistryLock<T>(fn: () => Promise<T>): Promise<T> {
-  const lockPath = `${resolveRegistryPath()}.lock`;
+export async function withRegistryLock<T>(fn: () => Promise<T>, meshRoot?: string): Promise<T> {
+  const lockPath = `${resolveRegistryPath(meshRoot)}.lock`;
   await ensureDir0700(dirname(lockPath));
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
