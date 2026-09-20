@@ -37,6 +37,16 @@ type RegEntry = {
   model?: string;
 };
 
+/** Transient direct-leg failures queue for the claim leg; misses stay loud. */
+function isTransientDirectError(err: unknown): boolean {
+  if (err instanceof MeshError) {
+    if (err.code === "PEER_BUSY_RETRY") return true;
+    if (err.code === "SERVER_UNAVAILABLE" && typeof err.status === "number" && err.status >= 500) return true;
+    return false;
+  }
+  return true;
+}
+
 /** Broadcast opt-in gate: exact MESH_BROADCAST=1 only, default-off. Single owner. */
 function isBroadcastEnabled(): boolean {
   return process.env.MESH_BROADCAST === "1";
@@ -223,9 +233,16 @@ export const mesh_send = tool({
       sanitizeSessionId(peerId);
       sanitizeSessionId(from);
       if (route === "direct") {
-        const id = await sendDirect(peerId, from, msgText, viaAuth, dir, { silent, noReply });
-        if (id !== null) return { id, via: "admitted" };
-        // Identity degrade: unresolvable triple queues for claimer with live client.
+        try {
+          const id = await sendDirect(peerId, from, msgText, viaAuth, dir, { silent, noReply });
+          if (id !== null) return { id, via: "admitted" };
+          // Identity degrade: unresolvable triple queues for claimer with live client.
+        } catch (err) {
+          // Why: transient direct faults queue instead of dropping. Misses
+          // (404, 401) and oversize (413) keep throwing under the exact-only
+          // contract; only 429, 5xx, and network failures fall through.
+          if (!isTransientDirectError(err)) throw err;
+        }
       }
       const id = await sendClaim(peerId, from, msgText, fanoutId, { silent, noReply });
       return { id, via: "queued" };
