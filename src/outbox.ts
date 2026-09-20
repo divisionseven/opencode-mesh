@@ -390,7 +390,7 @@ export async function claim(
         `SELECT * FROM outbox WHERE target_session = ? AND claimed_by IS NULL AND delivered_at IS NULL AND fail_reason IS NULL ORDER BY seq ASC LIMIT ?`
       );
       const take = db.prepare(
-        `UPDATE outbox SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL AND fail_reason IS NULL`
+        `UPDATE outbox SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL AND delivered_at IS NULL AND fail_reason IS NULL`
       );
       for (const target of ids) {
         db.exec("BEGIN IMMEDIATE");
