@@ -32,11 +32,12 @@ function enumPorts(explicit?: number[]): number[] {
 
 /** Read at most ENUM_MAX_BODY bytes; over-cap or unreadable bodies hash empty. */
 async function readBoundedBody(res: Response): Promise<string> {
-  const lenRaw = res.headers?.get?.("content-length") ?? null;
+  const headerBag = res.headers as { get?: (name: string) => string | null } | undefined;
+  const lenRaw = typeof headerBag?.get === "function" ? headerBag.get("content-length") : null;
   const len = lenRaw === null ? NaN : Number(lenRaw);
   if (Number.isFinite(len) && len > ENUM_MAX_BODY) return "";
   const getReader = (res.body as { getReader?: () => unknown } | null)?.getReader;
-  if (typeof getReader !== "function") return res.ok ? await res.text() : "";
+  if (typeof getReader !== "function") return await res.text();
   const reader = (getReader.call(res.body) as {
     read: () => Promise<{ done?: boolean; value?: Uint8Array }>;
     releaseLock: () => void;
