@@ -308,4 +308,18 @@ describe('gc inbox drain edges', () => {
     expect(after['ses-join']).toBeDefined();
     await safeRm(root); restore();
   }, 30_000);
+
+  it('legacy directory goes, live-adjacent file stays', async () => {
+    const { root, restore } = await freshRoot('mesh-gc-legacy-');
+    const { mkdir, writeFile, readFile } = await import('node:fs/promises');
+    const { existsSync } = await import('node:fs');
+    await mkdir(join(root, 'outbox', 'old'), { recursive: true });
+    await writeFile(join(root, 'outbox', 'old', 'row.json'), '{}');
+    await writeFile(join(root, 'token'), 'live-token');
+    const { runGc } = await import('../src/gc.js');
+    await runGc(root);
+    expect(existsSync(join(root, 'outbox'))).toBe(false);
+    expect(await readFile(join(root, 'token'), 'utf8')).toBe('live-token');
+    await safeRm(root); restore();
+  });
 });
