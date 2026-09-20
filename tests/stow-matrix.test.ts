@@ -90,14 +90,14 @@ describe('stow detection plus census', () => {
     }
   });
 
-  it('purge resolves on a deep tmp root without throwing', async () => {
+  it('purge resolves on a deep tmp root with a method', async () => {
     const root = await mkdtemp(join(tmpdir(), 'mesh-stow-purge-'));
     try {
       const { mkdir } = await import('node:fs/promises');
       const victim = join(root, 'a', 'b');
       await mkdir(victim, { recursive: true });
       const stow = await import('../src/install/stow.js');
-      await expect(stow.purgeMeshRoot(victim)).resolves.toBeUndefined();
+      await expect(stow.purgeMeshRoot(victim)).resolves.toMatch(/^(trash|system-trash|filesystem)$/);
       await safeRm(root);
     } finally {
       await safeRm(root).catch(() => {});
@@ -183,6 +183,43 @@ describe('stow detection plus census', () => {
     } finally {
       if (prevStow === undefined) delete process.env.OPENCODE_STOW_ROOT;
       else process.env.OPENCODE_STOW_ROOT = prevStow;
+      await safeRm(root);
+    }
+  });
+
+  it('latest snapshot resolves newest stamped dir, null when absent', async () => {    const root = await mkdtemp(join(tmpdir(), 'mesh-stow-snap-'));
+    const prevHome = process.env.HOME;
+    process.env.HOME = root;
+    try {
+      const { mkdir, writeFile } = await import('node:fs/promises');
+      const stow = await import('../src/install/stow.js');
+      expect(await stow.latestSnapshot()).toBeNull();
+      await mkdir(join(root, '.cache', 'opencode-mesh', 'snapshots', '1000'), { recursive: true });
+      await mkdir(join(root, '.cache', 'opencode-mesh', 'snapshots', '2000'), { recursive: true });
+      await mkdir(join(root, '.cache', 'opencode-mesh', 'snapshots', 'notes'), { recursive: true });
+      await writeFile(join(root, '.cache', 'opencode-mesh', 'snapshots', '2000', 'opencode.json.raw'), '{}');
+      const snap = await stow.latestSnapshot();
+      expect(snap?.dir).toBe(join(root, '.cache', 'opencode-mesh', 'snapshots', '2000'));
+      expect(snap?.path).toBe(join(root, '.cache', 'opencode-mesh', 'snapshots', '2000', 'opencode.json.raw'));
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
+      await safeRm(root);
+    }
+  });
+
+  it('latest snapshot with no stamped dirs reads null', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mesh-stow-snapempty-'));
+    const prevHome = process.env.HOME;
+    process.env.HOME = root;
+    try {
+      const { mkdir } = await import('node:fs/promises');
+      await mkdir(join(root, '.cache', 'opencode-mesh', 'snapshots', 'notes'), { recursive: true });
+      const stow = await import('../src/install/stow.js');
+      expect(await stow.latestSnapshot()).toBeNull();
+    } finally {
+      if (prevHome === undefined) delete process.env.HOME;
+      else process.env.HOME = prevHome;
       await safeRm(root);
     }
   });

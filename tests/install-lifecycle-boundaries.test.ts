@@ -181,10 +181,10 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
     }
   });
 
-  it("uninstall --purge edge: missing root resolves without throwing", async () => {
+  it("uninstall --purge edge: missing root resolves with a method", async () => {
     const { purgeMeshRoot } = await import("../src/install/stow.js");
     const target = join(tmpdir(), "edge-purge", "missing-root");
-    await expect(purgeMeshRoot(target)).resolves.toBeUndefined();
+    await expect(purgeMeshRoot(target)).resolves.toMatch(/^(trash|system-trash|filesystem)$/);
   });
 
   it("install trailing comma preserve: JSON.parse throws but splice preserves comma and comment", async () => {

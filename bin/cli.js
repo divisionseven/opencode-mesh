@@ -15,7 +15,7 @@ function printHelp() {
   console.log("       opencode-mesh send <target|all> <text...> [--no-reply] [--broadcast] [--json]");
   console.log("       opencode-mesh register <summary>");
   console.log("       opencode-mesh install [--dry-run]");
-  console.log("       opencode-mesh uninstall [--purge] [--yes]");
+  console.log("       opencode-mesh uninstall [--purge] [--yes] [--restore]");
   console.log("       opencode-mesh status [--json]");
   console.log("       opencode-mesh gc [--json]");
   console.log('State root: OPENCODE_MESH_ROOT→XDG_STATE_HOME→~/.local/state/opencode/mesh');
@@ -26,7 +26,7 @@ if (args.includes("--help") || args.includes("-h")) {
     send: "Usage: opencode-mesh send <target|all> <text...> [--no-reply] [--broadcast] [--json]",
     register: "Usage: opencode-mesh register <summary>",
     install: "Usage: opencode-mesh install [--dry-run]",
-    uninstall: "Usage: opencode-mesh uninstall [--purge] [--yes]",
+    uninstall: "Usage: opencode-mesh uninstall [--purge] [--yes] [--restore]",
     status: "Usage: opencode-mesh status [--json]",
     gc: "Usage: opencode-mesh gc [--json]",
   };
@@ -86,14 +86,24 @@ if (cmd === "install") {
 } else if (cmd === "uninstall") {
   const purge = args.includes("--purge");
   const yes = args.includes("--yes");
+  const restore = args.includes("--restore");
   const { resolveMeshRoot } = await import("../dist/xdg.js");
   const { PLUGIN_ENTRY } = await import("../dist/install/paths.js");
-  const { validateMeshRoot, detectStowRoot, stowedWrite } = await import("../dist/install/stow.js");
+  const { validateMeshRoot, detectStowRoot, stowedWrite, latestSnapshot } = await import("../dist/install/stow.js");
   const { editPluginArrayText } = await import("../dist/install/opencodeConfig.js");
   const root = resolveMeshRoot(); validateMeshRoot(root);
   const live = resolve(homedir(), ".config/opencode/opencode.json");
   const det = detectStowRoot(live);
   const src = det.sourcePath;
+  if (restore) {
+    const snap = await latestSnapshot();
+    if (!snap) { console.error("no snapshot to restore"); process.exit(1); }
+    let content = "";
+    try { content = await readFile(snap.path, "utf8"); }
+    catch { console.error(`snapshot unreadable ${snap.path}`); process.exit(1); }
+    await stowedWrite(src, content, { mode: 0o644 });
+    console.log(`restored ${src} from ${snap.dir}`);
+  }
   let raw = ""; try { raw = await readFile(src, "utf8"); } catch { try { raw = await readFile(live, "utf8"); } catch { raw = "{}"; } }
   const res = editPluginArrayText(raw, PLUGIN_ENTRY, "remove");
   if (!res.changed) { console.log("already uninstalled"); }
@@ -102,8 +112,8 @@ if (cmd === "install") {
     console.log(`Purge provenance ${process.env.OPENCODE_MESH_ROOT ? "OPENCODE_MESH_ROOT" : process.env.XDG_STATE_HOME ? "XDG_STATE_HOME" : "default"}`);
     if (!yes) { console.log("add --yes to confirm purge"); process.exit(0); }
     const { purgeMeshRoot } = await import("../dist/install/stow.js");
-    await purgeMeshRoot(root);
-    console.log(`purged (audit flush 5s)`);
+    const method = await purgeMeshRoot(root);
+    console.log(`purged via ${method}`);
   }
   process.exit(0);
 } else if (cmd === "status") {
