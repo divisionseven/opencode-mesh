@@ -591,7 +591,7 @@ describe('delivery: fan-out sequential, ENOSPC partial, restart-survive', () => 
     await safeRm(root); restore();
   });
 
-  it('ENOSPC per-peer partial: ok + failed == peers, batch never throws (413 still rethrows)', async () => {
+  it('ENOSPC per-peer transient failures queue for all peers, batch never throws (413 still rethrows)', async () => {
     process.env.MESH_BROADCAST = '1';
     const { root, restore } = await freshRoot('mesh-nospc-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
@@ -615,7 +615,8 @@ describe('delivery: fan-out sequential, ENOSPC partial, restart-survive', () => 
     );
     const j = JSON.parse(out.output);
     expect(j.ok + j.failed.length).toBe(j.peers);
-    expect(j.ok).toBe(3);
+    expect(j.ok).toBe(5);
+    expect(j.failed.length).toBe(0);
     await safeRm(root); restore();
   });
 
@@ -766,7 +767,7 @@ describe('delivery: send branch legs (coverage floor)', () => {
     }
   });
 
-  it('429 on prompt_async throws PEER_BUSY_RETRY', async () => {
+  it('429 on prompt_async queues for the claim leg', async () => {
     const { root, restore } = await freshRoot('mesh-send-429-');
     const prevDb = process.env.OPENCODE_MESH_DB_PATH;
     process.env.OPENCODE_MESH_DB_PATH = join(root, 'nodb.db');
@@ -781,8 +782,10 @@ describe('delivery: send branch legs (coverage floor)', () => {
     }) as unknown as typeof fetch;
     try {
       const { mesh_send } = await import('../src/tools/mesh_send.js');
-      const err = await (mesh_send.execute as any)({ target: 'ses-busy', text: 'hi' }, { sessionID: 'caller-429', directory: '/tmp' }).catch((e: any) => e);
-      expect(err.code).toBe('PEER_BUSY_RETRY');
+      const out = await (mesh_send.execute as any)({ target: 'ses-busy', text: 'hi' }, { sessionID: 'caller-429', directory: '/tmp' });
+      expect(JSON.parse(out.output)).toMatchObject({ ok: true, via: 'queued', target: 'ses-busy' });
+      const { pendingCount } = await import('../src/outbox.js');
+      expect(await pendingCount(['ses-busy'], root)).toBe(1);
     } finally {
       if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH; else process.env.OPENCODE_MESH_DB_PATH = prevDb;
       await safeRm(root); restore();

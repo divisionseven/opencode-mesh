@@ -243,7 +243,7 @@ describe('send resolution matrix', () => {
     await safeRm(root); restore();
   });
 
-  it('broadcast records a throwing peer with error text and continues', async () => {
+  it('broadcast throwing peer queues instead of failing', async () => {
     const { root, restore } = await freshRoot('mesh-send-bcastthrow-');
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
@@ -268,11 +268,65 @@ describe('send resolution matrix', () => {
       { target: 'all', text: 'hi', broadcast: true }, { sessionID: 'caller', directory: '/tmp' }
     );
     const body = JSON.parse(out.output) as { ok: number; failed: Array<{ peerId: string; code?: string; error: string }> };
-    expect(body.ok).toBe(1);
-    expect(body.failed.length).toBe(1);
-    expect(body.failed[0].peerId).toBe('ses-A');
-    expect(body.failed[0].code).toBeUndefined();
-    expect(body.failed[0].error).toContain('socket hang up');
+    expect(body.ok).toBe(2);
+    expect(body.failed.length).toBe(0);
+    const ob = await import('../src/outbox.js');
+    expect(await ob.pendingCount(['ses-A'], root)).toBe(1);
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
+
+  it('resolved target on 404 still misses with recovery hints', async () => {
+    const { root, restore } = await freshRoot('mesh-send-404miss-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === 'POST') return { ok: false, status: 404 } as unknown as Response;
+      if (u.includes('/session/status')) return { ok: true, status: 200 } as unknown as Response;
+      return { ok: true, status: 200, json: async () => liveRow() } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const { atomicUpdateRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: unknown) => {
+      const r = reg as Record<string, unknown>;
+      r['ses-T'] = { sessionId: 'ses-T', agent: 'beta', model: 'myprov/my-model', directory: '/tmp/t', updatedAt: Date.now() };
+      r['ses-other'] = { sessionId: 'ses-other', agent: 'other', directory: '/tmp/o', updatedAt: Date.now() };
+    }, root);
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    const ob = await import('../src/outbox.js');
+    const err = await (mesh_send.execute as unknown as (a: unknown, c: unknown) => Promise<unknown>)(
+      { target: 'ses-T', text: 'hi' }, { sessionID: 'caller', directory: '/tmp' }
+    ).then(() => null, (e: unknown) => e as { code?: string; didYouMean?: string[] });
+    expect(err?.code).toBe('PEER_NOT_FOUND');
+    expect(Array.isArray(err?.didYouMean)).toBe(true);
+    expect(await ob.pendingCount(['ses-T'], root)).toBe(0);
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
+
+  it('flapping 500 queues the same text for the claim leg', async () => {
+    const { root, restore } = await freshRoot('mesh-send-500queue-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === 'POST') return { ok: false, status: 500 } as unknown as Response;
+      if (u.includes('/session/status')) return { ok: true, status: 200 } as unknown as Response;
+      return { ok: true, status: 200, json: async () => liveRow() } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const { atomicUpdateRegistry } = await import('../src/registry.js');
+    await atomicUpdateRegistry((reg: unknown) => {
+      (reg as Record<string, unknown>)['ses-T'] = { sessionId: 'ses-T', agent: 'beta', model: 'myprov/my-model', directory: '/tmp/t', updatedAt: Date.now() };
+    }, root);
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    const ob = await import('../src/outbox.js');
+    const out = await (mesh_send.execute as unknown as (a: unknown, c: unknown) => Promise<{ output: string }>)(
+      { target: 'ses-T', text: 'flap me' }, { sessionID: 'caller', directory: '/tmp' }
+    );
+    expect(JSON.parse(out.output)).toMatchObject({ ok: true, via: 'queued', target: 'ses-T' });
+    const rows = await ob.claim(['ses-T'], 'probe-owner', 1, root);
+    expect(rows.length).toBe(1);
+    expect(rows[0].text).toBe('flap me');
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root); restore();
   });
