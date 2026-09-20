@@ -3,7 +3,7 @@
 // Keychain provider legs behind a fork mock (never touches /usr/bin/security).
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
-vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
+vi.mock('node:child_process', () => ({ execFileSync: vi.fn(), execFile: vi.fn() }));
 
 afterEach(() => {
   vi.resetModules();
@@ -115,5 +115,64 @@ describe('keychain provider branch legs', () => {
       vi.useRealTimers();
     }
     restoreUser(prev);
+  });
+});
+
+describe('keychain provider async fallback', () => {
+  async function freshAsync() {
+    vi.resetModules();
+    const child = await import('node:child_process');
+    const syncMock = child.execFileSync as unknown as ReturnType<typeof vi.fn>;
+    const asyncMock = child.execFile as unknown as ReturnType<typeof vi.fn>;
+    syncMock.mockReset();
+    asyncMock.mockReset();
+    const mod = await import('../src/serverAuthKeychainProvider.js');
+    return { syncMock, asyncMock, mod };
+  }
+
+  function denySecurity(asyncMock: ReturnType<typeof vi.fn>) {
+    asyncMock.mockImplementation((cmd: string, _args: unknown, _opts: unknown, cb: (err: Error | null, out?: string) => void) => {
+      if (String(cmd).endsWith('security')) {
+        const err = new Error('not found: security') as NodeJS.ErrnoException;
+        err.code = 'ENOENT';
+        cb(err);
+      } else {
+        cb(null, 'linux-pw\n');
+      }
+      return undefined as never;
+    });
+  }
+
+  it('absent security falls back to secret-tool without forking sync', async () => {
+    const prev = saveUser();
+    process.env.USER = 'alice';
+    try {
+      const { syncMock, asyncMock, mod } = await freshAsync();
+      denySecurity(asyncMock);
+      await expect(mod.getKeychainPasswordAsync()).resolves.toBe('linux-pw');
+      expect(syncMock).not.toHaveBeenCalled();
+      const stCall = asyncMock.mock.calls.find((c) => String(c[0]).endsWith('secret-tool'));
+      expect(stCall).toBeDefined();
+      const argv = (stCall as unknown[])[1] as string[];
+      expect(argv[0]).toBe('lookup');
+      expect(argv).toContain('opencode-server-password');
+    } finally {
+      restoreUser(prev);
+    }
+  });
+
+  it('both backends failing reads undefined', async () => {
+    const prev = saveUser();
+    delete process.env.USER;
+    try {
+      const { mod, asyncMock } = await freshAsync();
+      asyncMock.mockImplementation((_cmd: string, _args: unknown, _opts: unknown, cb: (err: Error | null) => void) => {
+        cb(new Error('denied'));
+        return undefined as never;
+      });
+      await expect(mod.getKeychainPasswordAsync()).resolves.toBeUndefined();
+    } finally {
+      restoreUser(prev);
+    }
   });
 });

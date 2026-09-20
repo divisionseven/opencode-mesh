@@ -4,7 +4,7 @@
 // Env plus default port in, sightings with fingerprint out; bind-ownership arbitrates incarnations.
 import { createHash } from "node:crypto";
 import { ONE_MB, OPENCODE_PORT } from "./constants.js";
-import { getServerAuthHeaderSync } from "./serverAuth.js";
+import { getServerAuthHeader } from "./serverAuth.js";
 
 export const ENUM_MAX_PORTS = 8;
 export const ENUM_TIMEOUT_MS = 1000;
@@ -66,7 +66,7 @@ async function readBoundedBody(res: Response): Promise<string> {
 export async function probePort(port: number, timeoutMs: number = ENUM_TIMEOUT_MS): Promise<ServerSight> {
   const t0 = Date.now();
   try {
-    const auth = getServerAuthHeaderSync();
+    const auth = await getServerAuthHeader();
     const headers: Record<string, string> = {};
     if (auth) headers.Authorization = auth;
     const res = await fetch(`http://127.0.0.1:${port}/session/status`, { headers, signal: AbortSignal.timeout(timeoutMs) });
