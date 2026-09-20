@@ -1,12 +1,31 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
-// Filesystem edge matrix: symlink-loop locks surface loud, missing dirs
-// fsync clean, foreign live holder blocks reap. Each test pins the exact
+// Filesystem edge matrix: missing dirs fsync clean, foreign live holder
+// blocks reap, permission denial fails fast. Each test pins the exact
 // failure mode, never internals.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi, afterEach } from 'vitest';
+
+const openCtl = vi.hoisted(() => ({ calls: 0, lockCalls: 0, fail: false }));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    open: async (...args: [string, ...unknown[]]) => {
+      openCtl.calls++;
+      if (String(args[0]).endsWith('.lock')) openCtl.lockCalls++;
+      if (openCtl.fail && String(args[0]).endsWith('.lock')) {
+        const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException;
+        err.code = 'EACCES';
+        throw err;
+      }
+      return (actual.open as (...a: [string, ...unknown[]]) => Promise<unknown>)(...args);
+    },
+  };
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -63,6 +82,28 @@ describe('filesystem edge matrix', () => {
     );
     expect(err).not.toBeNull();
     expect(fs.isLockContention(err)).toBe(true);
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
+
+  it('permission denial fails fast instead of retrying as contention', async () => {
+    const { root, restore } = await freshRoot('mesh-fs-eacces-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    openCtl.calls = 0;
+    openCtl.lockCalls = 0;
+    openCtl.fail = true;
+    const fs = await import('../src/fsAtomic.js');
+    try {
+      const err = await fs.withRegistryLock(async () => 'ran').then(
+        () => null,
+        (e: unknown) => e as { code?: string }
+      );
+      expect(err?.code).toBe('EACCES');
+      expect(openCtl.lockCalls).toBe(1);
+    } finally {
+      openCtl.fail = false;
+    }
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root); restore();
   });

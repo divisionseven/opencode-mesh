@@ -148,7 +148,7 @@ export async function withRegistryLock<T>(fn: () => Promise<T>, meshRoot?: strin
         if (isNoSpace(err)) throw err;
         lastErr = err;
         const code = (err as NodeJS.ErrnoException)?.code;
-        if (code !== 'EEXIST' && code !== 'EACCES') throw err;
+        if (code !== 'EEXIST') throw err;
         const decided = await decideReap(lockPath);
         if (decided.reap && (await reapVerified(lockPath, decided.content))) continue;
         break;
