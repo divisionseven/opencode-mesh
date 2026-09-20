@@ -89,6 +89,7 @@ async function seedPeer(root: string, id = 'wake-peer'): Promise<void> {
   const { atomicUpdateRegistry } = await import('../src/registry.js');
   await atomicUpdateRegistry((reg: unknown) => {
     (reg as Record<string, unknown>)[id] = { sessionId: id, agent: 'a', model: 'myprov/my-model', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };
+    (reg as Record<string, unknown>)['wake-caller'] = { sessionId: 'wake-caller', agent: 'build', updatedAt: Date.now() };
   }, root);
 }
 

@@ -163,11 +163,17 @@ export const mesh_send = tool({
       // so the direct TCP path never touches storage): always-branded wire ID rule.
       const { newMessageId } = await import("../outbox.js");
       const fromEntry = (reg as Record<string, { agent?: string; directory?: string; cwd?: string }>)[from];
-      const fromAgent = agentFromCtx ?? fromEntry?.agent ?? "unknown";
+      const senderEntry = fromEntry as { agent?: string } | undefined;
+      const liveAgent =
+        senderEntry && typeof senderEntry.agent === "string" && senderEntry.agent !== "unknown" && senderEntry.agent.length > 0
+          ? senderEntry.agent
+          : null;
+      const fromAgent = agentFromCtx ?? liveAgent ?? fromEntry?.agent ?? "unknown";
+      const verified = liveAgent !== null;
       const silentBit = isSilent(wakeOpts);
-      const prefixed = `${formatMeshPrefix(fromAgent, from, true, silentBit)}\n\n${quarantineText(msgText)}`;
+      const prefixed = `${formatMeshPrefix(fromAgent, from, verified, silentBit)}\n\n${quarantineText(msgText)}`;
       // Why: single-owned guard — runtime-measured prefix plus body, never estimated.
-      assertSendable(msgText, meshPrefixLength(fromAgent, from, true, silentBit));
+      assertSendable(msgText, meshPrefixLength(fromAgent, from, verified, silentBit));
       // Direct-leg live read feeds resolver live layer; miss falls through to DB.
       // Unresolvable rows queue for claim leg with full-trail deferred lines.
       const direct = await fetchDirectRow(peerId, viaAuth);
