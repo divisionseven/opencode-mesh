@@ -191,4 +191,14 @@ describe('outbox store failure surfacing', () => {
     await expect(ob.collectOutbox(Date.now(), 1000, 1, root)).rejects.toThrow();
     await safeRm(root); restore();
   });
+
+  it('delivered rows never re-enter the claim path', async () => {
+    const { root, restore } = await freshRoot('mesh-ob-noreclaim-');
+    const ob = await import('../src/outbox.js');
+    await ob.enqueue({ target_session: 'ses-T', from_session: 'ses-F', from_agent: 'a', text: 'hi' }, root);
+    const [row] = await ob.claim(['ses-T'], 'owner-1', 1, root);
+    expect(await ob.ack(row.id, 'owner-1', root)).toBe(true);
+    expect(await ob.claim(['ses-T'], 'owner-2', 1, root)).toEqual([]);
+    await safeRm(root); restore();
+  });
 });
