@@ -112,8 +112,9 @@ export async function pollAttachOnce(opts?: {
           e.focus = ATTACH_FOCUS_UNKNOWN;
         }
         // Gone-grace: ps-gone plus status-absent transitions out only past the
-        // grace on a successful view; a null view keeps every attached marker.
-        if (statusOk || (opts && "statusMap" in opts && status !== null)) {
+        // grace on a successful non-empty view; null or empty views keep
+        // every attached marker for lack of evidence.
+        if (statusOk) {
           for (const [id, e] of Object.entries(r)) {
             const rec = e as unknown as Record<string, unknown>;
             if (rec.attached === true && !attached.includes(id)) {
