@@ -322,4 +322,19 @@ describe('gc inbox drain edges', () => {
     expect(await readFile(join(root, 'token'), 'utf8')).toBe('live-token');
     await safeRm(root); restore();
   });
+
+  it('cli gc verb sweeps and prints JSON with exit zero', async () => {
+    const { root, restore } = await freshRoot('mesh-gc-cli-verb-');
+    const { execFileSync } = await import('node:child_process');
+    const stdout = execFileSync(process.execPath, ['bin/cli.js', 'gc', '--json'], {
+      cwd: process.cwd(),
+      env: { ...process.env, OPENCODE_MESH_ROOT: root, OPENCODE_MESH_DB_PATH: join(root, 'empty.db') },
+      timeout: 60_000,
+      encoding: 'utf8',
+    });
+    const result = JSON.parse(String(stdout)) as Record<string, unknown>;
+    expect(typeof result.prunedRegistry).toBe('number');
+    expect(typeof result.prunedInbox).toBe('number');
+    await safeRm(root); restore();
+  }, 90_000);
 });
