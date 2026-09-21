@@ -90,9 +90,9 @@ The `releaseOwner` function releases every unacked claim held by one process. Th
 | Failure                                            | Behavior                                                                               | Recovery                             |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------ |
 | Loopback probe timeout                             | Claim path queues the row                                                              | Claimer picks it up within 2s        |
-| Server returns 429                                 | Direct path throws `PEER_BUSY_RETRY`                                                   | Caller retries once                  |
 | Loopback probe fails (timeout, refused, non-OK)    | Claim path queues the row (`via: "queued"`, exit `0`)                                  | Claimer picks it up within 2s        |
-| POST returns 5xx (non-204 outside 404/401/413/429) | Direct path throws `SERVER_UNAVAILABLE` with the raw status (`exit 1`, nothing queued) | Caller retries; no outbox row exists |
+| POST returns 429, 5xx, or network failure on direct | Claim fallback queues the row (`via: "queued"`, exit `0`)                             | Claimer picks it up within 2s        |
+| POST returns other non-204 (not 404/401/413) | Direct path throws `SERVER_UNAVAILABLE` with the raw status (`exit 1`, nothing queued) | Caller retries; no outbox row exists |
 | Inject fails (any error)                           | Row released for redelivery                                                            | Auto-retry up to 25 attempts         |
 | Claim timeout (process crash)                      | `requeueStale` releases after 30s                                                      | Next poll cycle claims it            |
 | Depth cap hit                                      | New row rejected with `STORAGE_FULL`                                                   | Wait for claimer to drain, retry     |

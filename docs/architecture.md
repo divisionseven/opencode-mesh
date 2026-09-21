@@ -39,8 +39,8 @@ below link their canonical homes instead of copying them.
 | `lastAction.ts`                 | Last-action tracker. Stamps tool use, session events, and message legs. Backward-jump clamp, forward-jump dampening.                                                             |
 | `gc.ts`                         | Garbage collection. Registry stale pruning, outbox TTL drain, legacy inbox cleanup (sunset 0.3.0). Uses `trash` for user-data deletes.                                           |
 | `enumerate.ts`                  | Bounded local server enumeration. Probes extra ports from `MESH_ENUM_PORTS` for multi-instance discovery.                                                                        |
-| `serverAuth.ts`                 | Server auth header. Env-only `Basic` identical to the host; no password means no header.                                                                                         |
-| `serverAuthKeychainProvider.ts` | Opt-in Keychain password provider. Sole `/usr/bin/security` owner. 5m cache. Only reached behind `OPENCODE_MESH_KEYCHAIN_PROVIDER=1`.                                            |
+| `serverAuth.ts`                 | Server auth header. Env `Basic` identical to the host; Keychain behind the exact opt-in flag, with an async mirror. |
+| `serverAuthKeychainProvider.ts` | Opt-in Keychain password provider. `/usr/bin/security` first, `secret-tool` fallback on Linux. 5m cache. Only reached behind `OPENCODE_MESH_KEYCHAIN_PROVIDER=1`. |
 | `version.ts`                    | Package version constant.                                                                                                                                                        |
 
 ### Tool Definitions (`src/tools/`)
@@ -120,7 +120,7 @@ rows ([peers](../CONTEXT.md)).
 `mesh_peers` ranks the full union attach-first, then directory, agent,
 recency plus busy, and title, with misses ranking last and zero
 removals ([ranked peers](../CONTEXT.md)). Attached sessions come from
-the `ps` oracle plus status union with focus always unknown
+the `ps` oracle alone with focus always unknown
 ([attached](../CONTEXT.md)). Freshness also weighs the last-action
 stamp of tool, session, and message activity
 ([last action](../CONTEXT.md)).
@@ -179,7 +179,7 @@ The plugin never starts a file poll for delivery. Messages arrive either through
 | ---------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
 | `none`           | `OPENCODE_SERVER_PASSWORD` unset    | No `Authorization` header sent                                                         |
 | `env`            | `OPENCODE_SERVER_PASSWORD` set      | `Basic base64(opencode:password)`, username overridable via `OPENCODE_SERVER_USERNAME` |
-| `keychain-optin` | `OPENCODE_MESH_KEYCHAIN_PROVIDER=1` | Reads Keychain via `/usr/bin/security`, 5m cache, only reached when `env` is unset     |
+| `keychain-optin` | `OPENCODE_MESH_KEYCHAIN_PROVIDER=1` | Reads Keychain via `/usr/bin/security` with `secret-tool` fallback on Linux, 5m cache, only reached when `env` is unset |
 
 `status --json` reports `port.auth` as one of these three values.
 Auth knobs live in [Authentication](configuration.md#authentication).
@@ -195,7 +195,7 @@ Auth knobs live in [Authentication](configuration.md#authentication).
 - `PEER_BUSY_RETRY` 429: target busy; the caller retries.
 - `SERVER_UNAVAILABLE` 503: target server not answering.
 - `STORAGE_FULL` 507: outbox depth cap hit; newest row rejected.
-- `STORAGE_CORRUPT` 500: outbox unreadable; delete it and let it recreate.
+- `STORAGE_CORRUPT` 500: registry present but unparseable, or outbox unreadable.
 - `STORAGE_UNAVAILABLE` 503: store missing or unreachable.
 - `INVALID_DIRECTORY` 400: stale directory refused.
 - `BROADCAST_DISABLED` 403: broadcast without the exact opt-in.

@@ -2,7 +2,7 @@
 
 > Error codes, common failures, and FAQ. Every error is typed `MeshError` (`src/errors.ts`) with a stable `code`, HTTP-style `status`, and optional `didYouMean` suggestions. Match with `e instanceof MeshError` on `code`, never substring matching on message text.
 
-**Exception:** `sanitizeSessionId` (`src/xdg.ts`) throws a plain `Error` with `status: 400`, not a `MeshError`. Match it by `status`, not by class. Non-204 5xx responses arrive typed as `SERVER_UNAVAILABLE` with the raw status in the message; 429 arrives as `PEER_BUSY_RETRY`.
+**Exception:** `sanitizeSessionId` (`src/xdg.ts`) throws a plain `Error` with `status: 400`, not a `MeshError`. Match it by `status`, not by class. Non-204 5xx responses and network failures on the direct leg queue through the claim path instead of surfacing; 429 on the direct leg queues the same way. `PEER_BUSY_RETRY` survives only as an internal signal, never thrown to callers.
 
 ## Error codes
 
@@ -15,10 +15,10 @@ All ten codes from `MeshErrorCode` (`src/errors.ts`), priority-ordered by HTTP s
 | `BROADCAST_DISABLED`  | 403    | Broadcast without `MESH_BROADCAST=1`                                                       | Set `MESH_BROADCAST=1` or use peer-to-peer send                                                                                               |
 | `PEER_NOT_FOUND`      | 404    | Exact-only resolution missed; carries display-only `didYouMean` (up to 5)                  | Re-run `mesh_peers`, send to the exact id                                                                                                     |
 | `PAYLOAD_TOO_LARGE`   | 413    | Prefixed body over the 1MB guard (1048576 bytes, runtime-measured)                         | Shrink `text` and retry; send body text only, not the header                                                                                  |
-| `STORAGE_CORRUPT`     | 500    | Outbox failed integrity checks                                                             | Point `OPENCODE_MESH_ROOT` at a fresh root, restart                                                                                           |
-| `SERVER_UNAVAILABLE`  | 503    | POST failed with a 5xx (raw status in message); probe-fail queues instead, never this code | On this code nothing was queued (exit `1`): check server is up, then re-send; queued rows (probe-fail path) deliver on return without re-send |
+| `STORAGE_CORRUPT`     | 500    | Registry present but unparseable, or outbox failed integrity checks                        | Registry: restore the config from the install snapshot or start a fresh root; outbox: point `OPENCODE_MESH_ROOT` at a fresh root, restart        |
+| `SERVER_UNAVAILABLE`  | 503    | POST failed with a 5xx outside the transient window (raw status in message); 5xx and network faults inside it queue instead, never this code | On this code nothing was queued (exit `1`): check server is up, then re-send; queued rows deliver on return without re-send                      |
 | `STORAGE_UNAVAILABLE` | 503    | Outbox driver failed to load                                                               | Restart opencode to reload the driver                                                                                                         |
-| `PEER_BUSY_RETRY`     | 429    | Server answered 429 on the direct POST                                                     | Back off once; one retry, then escalate                                                                                                       |
+| `PEER_BUSY_RETRY`     | 429    | Server answered 429 on the direct POST; queued for the claim leg, never thrown to callers | Nothing to do; track the row by its receipt id                                                                                                    |
 | `STORAGE_FULL`        | 507    | Per-target depth cap 100; newest write rejected, never silent                              | Wait for claimer to drain; confirm target session exists                                                                                      |
 
 **Exit codes (CLI):** `0` ok, `1` runtime or missing `dist/`, `2` usage error.
@@ -124,13 +124,17 @@ export OPENCODE_MESH_KEYCHAIN_PROVIDER=1
 npx opencode-mesh status --json | python3 -m json.tool
 # port.auth should report env or keychain-optin
 
-# 5. For Keychain misses, mirror the provider lookup
+# 5. For Keychain misses, mirror the provider lookup (macOS)
 security find-generic-password -a "$USER" -s "opencode-server-password" -w
 # stdout must read the stored password
 
 # 6. Fall back to the bare item when the account misses
 security find-generic-password -s "opencode-server-password" -w
 # stdout must read the stored password
+
+# 7. On Linux the provider tries secret-tool lookup instead
+secret-tool lookup service opencode-server-password account "$USER"
+# falls back to the bare service-only lookup when the account misses
 ```
 
 A miss on both variants sends no header and reads `port.auth: "none"`; see [CLI status reference](cli.md#status).
@@ -288,7 +292,7 @@ Shrink `text` and retry on `PAYLOAD_TOO_LARGE` 413. Never hand-write the `[OC-ME
 
 ### Why must targets be exact ids?
 
-Fuzzy names misrouted when registry data went stale. Run `mesh_peers` first, then send to one exact id. Session ID match is case-sensitive, `agent@repo` match is case-insensitive on both fields and resolves only at exactly one row. Bare names, prefixes, and multi-match rows miss with `PEER_NOT_FOUND` 404 plus up to 5 display-only `didYouMean` hints. Quarantine tags lookalike body text past position zero when `MESH_QUARANTINE=1`; it never changes target resolution.
+Fuzzy names misrouted when registry data went stale. Run `mesh_peers` first, then send to one exact id. Session ID match is case-sensitive, `agent@repo` match is case-insensitive on both fields and resolves only at exactly one row. Bare names, prefixes, and multi-match rows miss with `PEER_NOT_FOUND` 404 plus up to 5 display-only `didYouMean` hints. Quarantine tags lookalike body text at any position when `MESH_QUARANTINE=1`; it never changes target resolution.
 
 ```ts
 await mesh_peers({ includeSelf: false })
