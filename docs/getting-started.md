@@ -62,11 +62,16 @@ Three paths. Pick one.
 ```bash
 # requires opencode 1.x (1.3.4+, below 2.0.0)
 opencode plugin opencode-mesh --global
+npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
 ```
 
-This registers the plugin in your global `~/.config/opencode/opencode.json` and
-the bundled agent skill auto-loads on the next start. No file copy, no extra
-step. Then restart OpenCode so the plugin loads. Plugins do not hot-reload.
+The first command registers the plugin in your global
+`~/.config/opencode/opencode.json`. The second installs the agent skill
+by name. OpenCode fetches the package itself at startup and the plugin
+provisions its own state on first use, so this is the whole install.
+(The plugin also registers its bundled skill path at load; the explicit
+skill install covers you if the host ignores it.) Then restart OpenCode
+so the plugin loads. Plugins do not hot-reload.
 
 Project-local instead of global: omit `--global` to register the plugin for the
 current project directory only. Prefer global: the mesh is cross-repo by design
@@ -108,8 +113,7 @@ npx opencode-mesh install --dry-run
 Use this path when you want a snapshot of your config before anything
 changes, when your dotfiles are stow-managed and the config must land in
 the stow source, or when no registry is reachable. Otherwise prefer Path 1:
-same result, fewer moving parts, and the skill stays in sync with the
-plugin version automatically. Dotfiles outside
+same result, fewer moving parts. Dotfiles outside
 `~/dotfiles` set `OPENCODE_STOW_ROOT` to the stow root. Relative values resolve
 against home. Unstowed files read the live path; stowed files write the source then restow, with a `dotfiles/opencode` substring fallback for exotic layouts. The full key lives in `configuration.md`.
 
@@ -157,8 +161,8 @@ non-healthy value: [CLI status reference](cli.md#status).
 
 Then restart OpenCode so the plugin loads. Plugins do not hot-reload.
 
-Confirm the skill auto-loaded (Path 1): the host skill listing names it, and any
-session answers a mesh question peers-first with zero manual copy:
+Confirm the skill landed (Paths 1 and 2): the host skill listing names it,
+and any session answers a mesh question peers-first with zero manual copy:
 
 ```bash
 opencode debug skill

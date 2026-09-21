@@ -171,14 +171,16 @@ opencode --version
 ```bash
 # requires opencode 1.3.13+, < 2.0.0
 opencode plugin opencode-mesh --global
+npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
 ```
 
-Registers the plugin globally and auto-loads the bundled agent skill on
-next start. Project-local instead: omit `--global`.
+The first command registers the plugin globally. The second installs
+the agent skill by name. OpenCode fetches the package itself at startup
+and the plugin provisions its own state on first use, so this is the
+whole install. (The plugin also registers its bundled skill path at
+load; the explicit skill install covers you if the host ignores it.)
 
-This is the whole install. OpenCode fetches the package itself at startup,
-the plugin provisions its own state on first use, and the skill arrives
-with the bundle. Nothing else to run.
+Project-local plugin instead: omit `--global`.
 
 ### Skill only (no plugin)
 
@@ -186,7 +188,8 @@ with the bundle. Nothing else to run.
 npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
 ```
 
-Installs just the usage instructions for your agents, without the plugin
+The second half of the recommended install, on its own. Installs just
+the usage instructions for your agents, without the plugin
 or its tools. Take this path when you want another agent to understand
 the mesh protocol, or when you are reading up before committing to the
 full install. Without the plugin there is no live mesh behind the skill.
@@ -213,8 +216,7 @@ Take this path instead of the recommended one when you want a snapshot
 of your config before anything changes, when your dotfiles are
 stow-managed and the config must land in the stow source, or when no
 registry is reachable and `npx` is all you have. Otherwise prefer the
-platform install above: same result, fewer moving parts, and the skill
-stays in sync with the plugin version automatically.
+platform install above: same result, fewer moving parts.
 
 ### From Source (contributors)
 
