@@ -231,6 +231,9 @@ opencode-mesh status --json | python3 -m json.tool
 
 ### Install plugin
 
+Prefer the platform install (`opencode plugin opencode-mesh --global`,
+see getting started). The verb below is the custom-installer alternate.
+
 Preview before writing:
 
 ```bash

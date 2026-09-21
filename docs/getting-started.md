@@ -62,18 +62,34 @@ Three paths. Pick one.
 ```bash
 # requires opencode 1.x (1.3.4+, below 2.0.0)
 opencode plugin opencode-mesh --global
+npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
 ```
 
-This registers the plugin in your global `~/.config/opencode/opencode.json` and
-the bundled agent skill auto-loads on the next start. No file copy, no extra
-step. Then restart OpenCode so the plugin loads. Plugins do not hot-reload.
+The first command registers the plugin in your global
+`~/.config/opencode/opencode.json`. The second installs the agent skill
+by name. OpenCode fetches the package itself at startup and the plugin
+provisions its own state on first use, so this is the whole install.
+(The plugin also registers its bundled skill path at load; the explicit
+skill install covers you if the host ignores it.) Then restart OpenCode
+so the plugin loads. Plugins do not hot-reload.
 
 Project-local instead of global: omit `--global` to register the plugin for the
 current project directory only. Prefer global: the mesh is cross-repo by design
 (a session in one repo messages a session in another), and a project-local entry
 loads in one directory only.
 
-### Path 2: npx (fallback for older opencode versions)
+### Path 2: skill only (no plugin)
+
+```bash
+npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
+```
+
+Installs just the usage instructions, without the plugin or its tools.
+Take this path when you want another agent to understand the mesh
+protocol, or when you are reading up before committing to the full
+install. Without the plugin there is no live mesh behind the skill.
+
+### Path 3: npx custom installer (alternate)
 
 ```bash
 npx opencode-mesh install
@@ -94,12 +110,14 @@ npx opencode-mesh install --dry-run
   `npx opencode-mesh install`, restart opencode (plugins do not hot-reload),
   re-run status.
 
-Use this path when the host predates `config`-hook skill support, when your
-dotfiles are stow-managed, or when no registry is reachable. Dotfiles outside
+Use this path when you want a snapshot of your config before anything
+changes, when your dotfiles are stow-managed and the config must land in
+the stow source, or when no registry is reachable. Otherwise prefer Path 1:
+same result, fewer moving parts. Dotfiles outside
 `~/dotfiles` set `OPENCODE_STOW_ROOT` to the stow root. Relative values resolve
 against home. Unstowed files read the live path; stowed files write the source then restow, with a `dotfiles/opencode` substring fallback for exotic layouts. The full key lives in `configuration.md`.
 
-### Path 3: source clone (contributors)
+### Path 4: source clone (contributors)
 
 ```bash
 git clone https://github.com/divisionseven/opencode-mesh.git
@@ -122,8 +140,8 @@ npm ls @opencode-ai/plugin @opencode-ai/sdk
 with `npm ls`, that is the only reason for this command. It writes zero config,
 copies zero skills, and the mesh will NOT work after it alone. To verify it did
 not install: `npx opencode-mesh status` still shows `plugin: absent` as
-expected. For a working mesh installation `npx opencode-mesh install` (or
-`opencode plugin opencode-mesh --global`), restart opencode to load it, then
+expected. For a working mesh installation take Path 1 above
+(`opencode plugin opencode-mesh --global`), restart opencode to load it, then
 `npx opencode-mesh status` until `plugin: present`
 ([status reference](cli.md#status)).
 
@@ -143,8 +161,8 @@ non-healthy value: [CLI status reference](cli.md#status).
 
 Then restart OpenCode so the plugin loads. Plugins do not hot-reload.
 
-Confirm the skill auto-loaded (Path 1): the host skill listing names it, and any
-session answers a mesh question peers-first with zero manual copy:
+Confirm the skill landed (Paths 1 and 2): the host skill listing names it,
+and any session answers a mesh question peers-first with zero manual copy:
 
 ```bash
 opencode debug skill
