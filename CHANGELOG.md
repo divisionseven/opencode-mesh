@@ -8,6 +8,37 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- CLI grew a `gc` verb with `--json` output, per-verb `--help` on every verb, multiword send text, `--json` flags on peers and send, snapshot restore on uninstall, and a purge fallback that reports its method (gate: E2E suite spawning the real binary plus `codecov/patch` green)
+- Keychain reads gained a non-blocking path with Linux `secret-tool` fallback sharing the existing TTL cache, wired into the enumerate probe (gate: fallback tests failing before, green after)
+- Enumerate probes cap response bodies at 1MB, hashing over-cap bodies empty while small bodies fingerprint byte-identical (gate: over-cap and completion tests failing before, green after)
+- Install docs lead with the platform path (plugin entry plus skill by name) with the custom installer kept as a documented alternate (gate: skills CLI discovery verified live against this repo)
+
+### Fixed
+
+- Fix fresh installs writing invalid JSON on empty plugin configs by taking a no-leading-comma branch on blank object bodies (gate: matrix test asserting `JSON.parse` over three empty shapes)
+- Fix corrupt registry wipes by refusing writes on present-but-unparseable stores with `STORAGE_CORRUPT`, leaving entries intact (gate: garbage-seed test asserting survival plus the throw)
+- Fix GC deleting concurrent joins by snapshotting candidates read-only and re-validating inside the single writer (gate: mid-sweep join repro asserting survival)
+- Fix per-sweep trashing of live state by gating deletion behind legacy-directory detection, leaving live `outbox` and `token` paths alone (gate: live-plus-legacy seed test)
+- Fix transient direct failures dropping by routing 429, 5xx, and network faults to the claim leg; 404 misses keep `PEER_NOT_FOUND` with `didYouMean`, 401 keeps `UNAUTHORIZED`, and direct 429 now queues instead of surfacing (gate: two-leg test with typo target plus stubbed 500 and 429)
+- Fix broadcast dropping its tail by removing the mid-fanout 413 rethrow and reporting every peer in the failed list (gate: three-peer fan-out with middle failure)
+- Fix sandboxed roots sharing the live lock by threading an optional root through `withRegistryLock` from every writer (gate: two-root test asserting per-root lock files)
+- Fix forged direct senders by re-attesting the sender against the live registry on the direct leg, marking unknown senders quarantined (gate: unknown-agent send asserting the marker)
+- Fix status-only sessions reading as attached by conferring attached from the `ps` oracle alone (gate: ps-plus-status feed asserting only `ps` ids attach)
+- Fix empty status views clearing markers by treating null and empty maps as no-evidence past grace (gate: marker held across an empty view)
+- Fix permission faults misclassified as contention by narrowing `isLockContention` and the lock loop to `EEXIST` only, so `EACCES` throws loud instead of degrading register to `busy: true` (gate: injected `EACCES` asserting the loud throw)
+- Fix delivered rows re-claimable in the take window by adding the `delivered_at IS NULL` exclusion as defense-in-depth (gate: deliver-then-claim asserting zero rows)
+- Fix leading lookalike markers passing quarantine by tagging at any position when enabled (gate: index-zero feed asserting the tag)
+- Fix peers display mutating the registry by removing the persist from the read path, output byte-identical (gate: dead-id list asserting byte-identical registry)
+- Fix full-disk misses on the Node driver by also mapping numeric `errcode` 13 to `STORAGE_FULL`, proven against real full disks on both drivers with no permission shape colliding (gate: exact Node error-shape replay)
+- Fix unknown commands exiting 1 by printing usage and exiting 2 under the usage contract (gate: E2E spawn asserting code plus stderr)
+- Replace the dependency-review deny list with the allow list for `MIT, Apache-2.0, ISC, BSD-3-Clause, MPL-2.0` (gate: CI green)
+
+### Removed
+
+- Drop the broadcast mutant probe and registry retention probe: both read repo source and asserted on text, banned under the vitest rules, with behavior already owned by gate and prune tests (gate: full suite green minus two plus a repo-wide source-read sweep)
+
 ## [1.0.1] - 2026-09-19
 
 ### Added

@@ -51,7 +51,7 @@ opencode --version
 
 ### Platform notes
 
-The mesh shells out to `/usr/bin/security`, `ps`, `trash`, `stow`, `rg`, and `ls`. Each call degrades silently when its binary is missing. A missing `/usr/bin/security` reads no Keychain password and sends no header. A failed `ps` cycle yields an empty attached snapshot and never stops the poller. A failed restow never fails the write. Scripts run under bash; examples are POSIX-compatible. Install and purge roots accept homedir at depth 3 or more or tmpdir at depth 2 or more; bare `/tmp` and depth 1 tmp paths never validate.
+The mesh shells out to `/usr/bin/security`, `secret-tool`, `ps`, `trash`, `stow`, `rg`, and `ls`. Each call degrades silently when its binary is missing. A missing `/usr/bin/security` falls back to `secret-tool lookup` on Linux; with neither present it reads no Keychain password and sends no header. A failed `ps` cycle yields an empty attached snapshot and never stops the poller. A failed restow never fails the write. Scripts run under bash; examples are POSIX-compatible. Install and purge roots accept homedir at depth 3 or more or tmpdir at depth 2 or more; bare `/tmp` and depth 1 tmp paths never validate.
 
 ## Section 2: Install
 
@@ -272,9 +272,8 @@ refuses, serialized bodies at or over 1MB refuse. Exceeding it returns
 `PAYLOAD_TOO_LARGE` 413 before any write.
 
 Lookalike text passes through verbatim by default. Exact `MESH_QUARANTINE=1`
-tags bodies with an inline pattern past position zero as
-`[QUARANTINED-LOOKALIKE]`. Leading matches pass through, default-off passes
-verbatim.
+tags bodies with an inline pattern at any position as
+`[QUARANTINED-LOOKALIKE]`; default-off passes verbatim.
 
 ### Progress events
 
@@ -587,8 +586,8 @@ To also trash mesh state:
 npx opencode-mesh uninstall --purge --yes
 ```
 
-This requires the `trash` binary. Without it, purge reports done and deletes
-nothing.
+Purge tries `trash`, then system trash, then a filesystem delete, and
+reports which method ran (`purged via <method>`).
 
 ---
 

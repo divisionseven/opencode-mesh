@@ -37,15 +37,16 @@ opencode-mesh peers
 Send a message to a peer session or broadcast to all peers.
 
 ```
-opencode-mesh send <target|all> <text> [--no-reply] [--broadcast]
+opencode-mesh send <target|all> <text...> [--no-reply] [--broadcast] [--json]
 ```
 
 | Flag          | Effect                                          |
 | ------------- | ----------------------------------------------- |
 | `--no-reply`  | Deposit message without waking the target agent |
 | `--broadcast` | Send to all peers (requires `MESH_BROADCAST=1`) |
+| `--json`      | Accepted; output shape unchanged                 |
 
-Both `<target>` and `<text>` are required. Use `all` or `--broadcast` for fan-out. The target accepts an exact session ID (case-sensitive, full ID only, no prefix), or an exact full-field `agent@repo` that denotes exactly one row (case-insensitive on both fields, agent from session record plus repo from directory basename). Bare `agent`, bare `repo`, prefix ID, and multi-match `agent@repo` all miss with `PEER_NOT_FOUND` 404 plus `didYouMean` display names (up to 5, deduped, not sendable); nothing is sent on a miss. Tool gate lowercases `all`; CLI passes `<target>` verbatim, so `ALL` fans out only through the tool gate.
+Both `<target>` and `<text...>` are required; `<text...>` joins every non-flag word so multiword text sends whole. Use `all` or `--broadcast` for fan-out. The target accepts an exact session ID (case-sensitive, full ID only, no prefix), or an exact full-field `agent@repo` that denotes exactly one row (case-insensitive on both fields, agent from session record plus repo from directory basename). Bare `agent`, bare `repo`, prefix ID, and multi-match `agent@repo` all miss with `PEER_NOT_FOUND` 404 plus `didYouMean` display names (up to 5, deduped, not sendable); nothing is sent on a miss. Tool gate lowercases `all`; CLI passes `<target>` verbatim, so `ALL` fans out only through the tool gate.
 
 `--broadcast` discards any named target and fans out to all peers. `send all` without the env flag and `send <id> --broadcast` without the env flag both fail with `BROADCAST_DISABLED` 403 before any send; nothing is queued. The flag must read the exact string `"1"`.
 
@@ -116,13 +117,16 @@ Contract: `install` writes at most two paths (plugin entry in `opencode.json`, s
 Remove the opencode-mesh plugin from your OpenCode configuration.
 
 ```
-opencode-mesh uninstall [--purge] [--yes]
+opencode-mesh uninstall [--purge] [--yes] [--restore]
 ```
 
 | Flag      | Effect                                                        |
 | --------- | ------------------------------------------------------------- |
 | `--purge` | Delete the mesh state directory (registry, outbox, snapshots) |
 | `--yes`   | Confirm purge without interactive prompt                      |
+| `--restore` | Write the newest config snapshot back, then continue        |
+
+`--restore` fails loud with exit `1` when no snapshot exists or the newest one is unreadable.
 
 Without `--purge`, only the plugin entry is removed from the config. With `--purge`, the entire state directory is trashed. Always pass `--yes` with `--purge` to skip the confirmation hint.
 
@@ -134,7 +138,7 @@ opencode-mesh uninstall --purge --yes
 # Removes plugin entry and trashes mesh state directory
 ```
 
-Contract: `uninstall` removes the plugin entry only (skill file, cache snapshot, and mesh state root untouched). `--purge` deletes the state directory and requires `--yes`; without `--yes` it prints the confirm hint and exits `0`. Blast radius without `--yes`: config entry only. With `--purge --yes`: entire state root trashed (recover from trash; keep the cache snapshot).
+Contract: `uninstall` removes the plugin entry only (skill file, cache snapshot, and mesh state root untouched). `--purge` deletes the state directory and requires `--yes`; without `--yes` it prints the confirm hint and exits `0`. Purge reports its method (`trash`, `system-trash`, or `filesystem` fallback). Blast radius without `--yes`: config entry only. With `--purge --yes`: entire state root trashed (recover from trash; keep the cache snapshot).
 
 ### `status`
 
@@ -179,6 +183,25 @@ opencode-mesh status --json
 # { "plugin": "present", "skill": "present", ... }
 ```
 
+### `gc`
+
+Run one garbage-collection sweep.
+
+```
+opencode-mesh gc [--json]
+```
+
+| Flag     | Effect                                     |
+| -------- | ------------------------------------------ |
+| `--json` | Output raw JSON instead of formatted lines |
+
+```bash
+opencode-mesh gc
+# pruned registry=0 inbox=0 outbox=0 live=0
+```
+
+Exits `0` on a completed sweep, `1` on a sweep fault.
+
 ## Flags
 
 ### Global
@@ -193,11 +216,15 @@ opencode-mesh status --json
 | Command     | Flag             | Effect                  |
 | ----------- | ---------------- | ----------------------- |
 | `peers`     | `--include-self` | Include calling session |
+| `peers`     | `--json`         | Accepted; output is always JSON |
 | `send`      | `--no-reply`     | Silent deposit, no wake |
 | `send`      | `--broadcast`    | Fan-out to all peers    |
+| `send`      | `--json`         | Accepted; output shape unchanged |
+| `gc`        | `--json`         | JSON output             |
 | `install`   | `--dry-run`      | Preview changes only    |
 | `uninstall` | `--purge`        | Delete state directory  |
 | `uninstall` | `--yes`          | Confirm purge           |
+| `uninstall` | `--restore`      | Restore newest snapshot |
 | `status`    | `--json`         | JSON output             |
 
 ## Exit codes
@@ -205,8 +232,8 @@ opencode-mesh status --json
 | Code | Meaning                                                                                                                                                  |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`  | Success: command ran, `--help` printed, `--dry-run` previewed, already installed, already uninstalled, or purge without `--yes` printed the confirm hint |
-| `1`  | Error: `dist/` missing (run `npm install && npm run build`), `send` missing required arguments, `send` delivery error, or unknown command                |
-| `2`  | Usage: no arguments provided                                                                                                                             |
+| `1`  | Error: `dist/` missing (run `npm install && npm run build`), `send` missing required arguments, `send` delivery error, no snapshot to restore            |
+| `2`  | Usage: no arguments provided, or unknown command                                                                                                         |
 
 ## Common patterns
 

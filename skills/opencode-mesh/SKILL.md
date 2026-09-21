@@ -139,8 +139,8 @@ re-check first.
 
 Password absent means no header; `port.auth` reads `none`. Env password wins;
 Keychain runs only behind exact `OPENCODE_MESH_KEYCHAIN_PROVIDER=1`. Keychain
-calls `/usr/bin/security` with 5m cache; `USER` sanitized to safe chars, miss
-sends no header. Default user reads `opencode`; `OPENCODE_SERVER_USERNAME`
+tries `/usr/bin/security` first with 5m cache, then `secret-tool lookup` on
+Linux; `USER` sanitized to safe chars, miss sends no header. Default user reads `opencode`; `OPENCODE_SERVER_USERNAME`
 overrides username only. Keep pasted transcripts under `/tmp` roots free of
 passwords, tokens, registry dumps.
 
