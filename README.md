@@ -176,7 +176,22 @@ opencode plugin opencode-mesh --global
 Registers the plugin globally and auto-loads the bundled agent skill on
 next start. Project-local instead: omit `--global`.
 
-### From npx (fallback)
+This is the whole install. OpenCode fetches the package itself at startup,
+the plugin provisions its own state on first use, and the skill arrives
+with the bundle. Nothing else to run.
+
+### Skill only (no plugin)
+
+```bash
+npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
+```
+
+Installs just the usage instructions for your agents, without the plugin
+or its tools. Take this path when you want another agent to understand
+the mesh protocol, or when you are reading up before committing to the
+full install. Without the plugin there is no live mesh behind the skill.
+
+### From npx custom installer (alternate)
 
 ```bash
 # preview the install process with the `--dry-run` flag
@@ -193,6 +208,13 @@ npx opencode-mesh status
 - A `~/.cache` snapshot is created of your prior config for added safety.
 
 Nothing else. Full inventory in our [Getting Started][docs-getting-started] docs. Preview install with `install --dry-run`.
+
+Take this path instead of the recommended one when you want a snapshot
+of your config before anything changes, when your dotfiles are
+stow-managed and the config must land in the stow source, or when no
+registry is reachable and `npx` is all you have. Otherwise prefer the
+platform install above: same result, fewer moving parts, and the skill
+stays in sync with the plugin version automatically.
 
 ### From Source (contributors)
 
@@ -215,7 +237,7 @@ npm ls @opencode-ai/plugin @opencode-ai/sdk
 
 **Library Use:** `import` the plugin module in your own code or inspect deps with `npm ls`, that is the only reason for this command. It writes zero config,
 copies zero skills, and the mesh will NOT work after it alone. To verify it did not install: `npx opencode-mesh status` still shows `plugin: absent` as expected.
-For a working mesh installation `npx opencode-mesh install` (or `opencode plugin opencode-mesh --global`), restart opencode to load it,
+For a working mesh installation take the recommended path above (`opencode plugin opencode-mesh --global`), restart opencode to load it,
 then `npx opencode-mesh status` until `plugin: present` ([Status Reference](docs/cli.md#status)).
 
 [See Full Installation Guide →][install-guide]

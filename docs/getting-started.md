@@ -73,7 +73,18 @@ current project directory only. Prefer global: the mesh is cross-repo by design
 (a session in one repo messages a session in another), and a project-local entry
 loads in one directory only.
 
-### Path 2: npx (fallback for older opencode versions)
+### Path 2: skill only (no plugin)
+
+```bash
+npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
+```
+
+Installs just the usage instructions, without the plugin or its tools.
+Take this path when you want another agent to understand the mesh
+protocol, or when you are reading up before committing to the full
+install. Without the plugin there is no live mesh behind the skill.
+
+### Path 3: npx custom installer (alternate)
 
 ```bash
 npx opencode-mesh install
@@ -94,12 +105,15 @@ npx opencode-mesh install --dry-run
   `npx opencode-mesh install`, restart opencode (plugins do not hot-reload),
   re-run status.
 
-Use this path when the host predates `config`-hook skill support, when your
-dotfiles are stow-managed, or when no registry is reachable. Dotfiles outside
+Use this path when you want a snapshot of your config before anything
+changes, when your dotfiles are stow-managed and the config must land in
+the stow source, or when no registry is reachable. Otherwise prefer Path 1:
+same result, fewer moving parts, and the skill stays in sync with the
+plugin version automatically. Dotfiles outside
 `~/dotfiles` set `OPENCODE_STOW_ROOT` to the stow root. Relative values resolve
 against home. Unstowed files read the live path; stowed files write the source then restow, with a `dotfiles/opencode` substring fallback for exotic layouts. The full key lives in `configuration.md`.
 
-### Path 3: source clone (contributors)
+### Path 4: source clone (contributors)
 
 ```bash
 git clone https://github.com/divisionseven/opencode-mesh.git
@@ -122,8 +136,8 @@ npm ls @opencode-ai/plugin @opencode-ai/sdk
 with `npm ls`, that is the only reason for this command. It writes zero config,
 copies zero skills, and the mesh will NOT work after it alone. To verify it did
 not install: `npx opencode-mesh status` still shows `plugin: absent` as
-expected. For a working mesh installation `npx opencode-mesh install` (or
-`opencode plugin opencode-mesh --global`), restart opencode to load it, then
+expected. For a working mesh installation take Path 1 above
+(`opencode plugin opencode-mesh --global`), restart opencode to load it, then
 `npx opencode-mesh status` until `plugin: present`
 ([status reference](cli.md#status)).
 
