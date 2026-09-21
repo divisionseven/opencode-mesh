@@ -216,4 +216,4 @@ if (cmd === "install") {
     process.exit(1);
   }
   process.exit(0);
-} else { console.error(`unknown command ${cmd}`); process.exit(1); }
+} else { console.error(`unknown command ${cmd}`); printHelp(); process.exit(2); }

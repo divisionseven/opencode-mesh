@@ -159,4 +159,22 @@ describe('e2e cli', () => {
       await safeRm(home); restore();
     }
   });
+
+  it('unknown command prints usage with exit two', async () => {
+    const { home, restore } = await freshHome('mesh-e2e-unknown-');
+    try {
+      let code = 0;
+      let stderr = '';
+      try {
+        cli(home, ['frobnicate']);
+      } catch (e) {
+        code = (e as { status?: number }).status ?? 0;
+        stderr = String((e as { stderr?: unknown }).stderr ?? '');
+      }
+      expect(code).toBe(2);
+      expect(stderr).toContain('unknown command frobnicate');
+    } finally {
+      await safeRm(home); restore();
+    }
+  });
 });
