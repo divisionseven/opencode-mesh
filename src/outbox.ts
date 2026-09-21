@@ -248,7 +248,8 @@ function isUnavailable(err: unknown): boolean {
 function storageError(err: unknown): MeshError {
   const code = (err as { code?: string })?.code ?? "";
   const errno = (err as { errno?: number })?.errno;
-  if (isNoSpace(err) || code.includes("FULL") || errno === 13)
+  const errcode = (err as { errcode?: number })?.errcode;
+  if (isNoSpace(err) || code.includes("FULL") || errno === 13 || errcode === 13)
     return new MeshError("STORAGE_FULL", `outbox full: ${String((err as Error)?.message ?? err)}`);
   if (code.includes("CORRUPT") || errno === 11)
     return new MeshError("STORAGE_CORRUPT", `outbox corrupt: ${String((err as Error)?.message ?? err)}`);
