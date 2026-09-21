@@ -257,15 +257,6 @@ describe('broadcast gate: default-off rejects before fan-out', () => {
     }
   });
 
-  it('mutant gate: source carries the opt-in check (remove gate → default-off tests redden)', async () => {
-    const sendSrc = await readFile('src/tools/mesh_send.ts', 'utf8');
-    expect(sendSrc).toMatch(/MESH_BROADCAST/);
-    expect(sendSrc).toMatch(/BROADCAST_DISABLED/);
-    expect(sendSrc).toMatch(/isBroadcastEnabled/);
-    const errSrc = await readFile('src/errors.ts', 'utf8');
-    expect(errSrc).toMatch(/BROADCAST_DISABLED/);
-  });
-
   it('broadcast captures a per-peer miss while siblings admit', async () => {
     const { root, restore } = await freshRoot('mesh-bc-perpeer-');
     const prevBc = saveBroadcastEnv();

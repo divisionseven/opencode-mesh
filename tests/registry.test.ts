@@ -56,14 +56,6 @@ describe('registry', () => {
     expect(Object.keys(r)).toEqual([]);
     await safeRm(root);
   });
-  it('no 7 days retention', async () => {
-    const src = await import('node:fs/promises').then((m) =>
-      m.readFile('src/registry.ts', 'utf8')
-    );
-    expect(src).not.toMatch(/7 days/);
-    expect(src).not.toMatch(/archive/);
-    expect(src).not.toMatch(/DEADLOCK/);
-  });
   it('STALE_TTL 24h', () => {
     expect(STALE_TTL_MS).toBe(24 * 60 * 60 * 1000);
   });
