@@ -26,7 +26,7 @@
 ## Highlights
 
 > **TL;DR**
-> Any [OpenCode][link-opencode] session can now message any other session on your machine (TUI, GUI, Web, Headless). Auto-discovery and real-time status updates, messages sent by exact ID, answered with a read-receipt. No daemon to run, no loops to manage. The OpenCode server handles all the delivery natively, the same way it routes a user message.
+> Any [OpenCode][link-opencode] session can now message any other session on your machine (TUI, GUI, Web, Headless). Auto-discovery and real-time status updates, agent-to-agent prompting, messages sent by exact ID, answered with a read-receipt. No daemon to run, no loops to manage. The OpenCode server handles all the delivery natively, the same way it routes a user message.
 
 **No daemons, no loops, no bloat, no confusing setup, nothing for you to manage or maintain. Just start messaging.**
 
@@ -53,7 +53,7 @@ Mesh messages can *"wake up"* other agents (if desired), triggering their turn t
 
 - **The Orchestrator**: One main session acts as your command center. It discovers specialist sessions (build-reviewer, builder, tester), delegates tasks to them, waits for receipts, checks their work, and assigns follow-ups. No custom orchestration code, just `mesh_peers` to find who's available, `mesh_send` to delegate, and receipts to track completion.
 - **Live Code Review**: Your builder session finishes a feature and sends the file path to a build-reviewer session. The build-reviewer analyzes it, sends feedback back. The builder fixes issues and sends the updated version. All on loopback, all with delivery receipts, so you can see exactly where each message is in the pipeline.
-- **Parallel Research**: Spin up three research sessions to investigate different aspects of a problem simultaneously. Each sends findings to a synthesis session that combines them into a comprehensive report. No file-passing, no copy-paste... just messages flowing between live sessions.
+- **Parallel Research**: Spin up three research teams in different sessions to investigate different aspects of a problem simultaneously. Each sends findings to a synthesis session that combines them into a comprehensive report. No file-passing, no copy-paste... just messages flowing between live sessions.
 - **Multi-Repo Collaboration**: Session A works on your frontend repo, Session B works on your backend repo. When the API contract changes, Session A messages Session B with the updated schema. Both stay in sync without either leaving their repo context.
 - **Background Monitoring**: Use silent deposits to log activity across sessions without waking them. Your orchestrator can silently ping every session to confirm they're alive, track response times, and build an audit trail, all without interrupting ongoing work.
 - **Staged Deployment**: A deployment session messages your test suite session. Tests pass → session messages the staging deployer. Staging passes → session messages production. Each stage is a separate session with its own context, connected by the mesh.
@@ -97,7 +97,7 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 
 ## Installation
 
-**Platform Support:**
+### Platform Support:
 
 [![Platforms][platforms-macos-badge]][link-releases]
 [![Platforms][platforms-linux-badge]][link-releases]
@@ -116,7 +116,7 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 [![opencode][badge-opencode]][opencode-repo]
 
 <details>
-<summary>Node >= 22</summary>
+<summary><strong>Node >= 22</strong></summary>
 
 **Install:**
 
@@ -142,7 +142,7 @@ node --version
 </details>
 
 <details>
-<summary>OpenCode 1.x (>= 1.3.13, < 2.0.0)</summary>
+<summary><strong>OpenCode 1.x (>= 1.3.13, < 2.0.0)</strong></summary>
 
 **Install:**
 
@@ -169,8 +169,10 @@ opencode --version
 ### From OpenCode (recommended)
 
 ```bash
-# requires opencode 1.3.13+, < 2.0.0
+# install the plugin
 opencode plugin opencode-mesh --global
+
+# install the accompanying agent skill
 npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
 ```
 
@@ -467,7 +469,7 @@ and community contributions.
 ---
 
 <p align="center">
-  <strong>Last Updated: 2026-09-20</strong></br>
+  <strong>Last Updated: 2026-09-21</strong></br>
   <em><sub>OpenCode-Mesh is open-source and will remain free forever. If you find it valuable, please consider sponsoring its continued development and starring the repo to help others find it.</sub></em></br>
   <em><sub>— Division 7</em></sub></br></br>
   <a href="https://x.com/divsev"><img src="https://img.shields.io/badge/X-%40divsev-black?logo=x&logoColor=white&label=&color=0D0D0D" alt="X: @divsev"></a>
