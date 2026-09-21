@@ -107,4 +107,26 @@ describe('filesystem edge matrix', () => {
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root); restore();
   });
+
+  it('register surfaces permission denial loud instead of degrading to busy', async () => {
+    const { root, restore } = await freshRoot('mesh-fs-regdenied-');
+    const prev = process.env.OPENCODE_MESH_ROOT;
+    process.env.OPENCODE_MESH_ROOT = root;
+    openCtl.fail = true;
+    try {
+      const { mesh_register } = await import('../src/tools/mesh_register.js');
+      const err = await (mesh_register.execute as unknown as (a: unknown, b: unknown) => Promise<unknown>)(
+        { summary: 'denied probe' },
+        { sessionID: 'ses-denied-1', directory: '/tmp', agent: 'builder' }
+      ).then(
+        () => null,
+        (e: unknown) => e as { code?: string }
+      );
+      expect(err?.code).toBe('EACCES');
+    } finally {
+      openCtl.fail = false;
+    }
+    if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
+    await safeRm(root); restore();
+  });
 });
