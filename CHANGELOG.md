@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-21
+
 ### Added
 
 - CLI grew a `gc` verb with `--json` output, per-verb `--help` on every verb, multiword send text, `--json` flags on peers and send, snapshot restore on uninstall, and a purge fallback that reports its method (gate: E2E suite spawning the real binary plus `codecov/patch` green)
@@ -76,6 +78,7 @@ Initial release. Works with OpenCode 1.x (`>=1.3.13 <2.0.0`). Support for OpenCo
 
 - Report sensitive issues through the private advisory channel in `SECURITY.md`.
 
+[1.1.0]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.1.0
 [1.0.1]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.0.1
 [1.0.0]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.0.0
 [keep-a-changelog]: https://keepachangelog.com/en/1.1.0/
