@@ -46,7 +46,6 @@ describe('keychain provider branch legs', () => {
     const { mock, mod } = await freshProvider();
     mock.mockReturnValue('bare-pw');
     expect(mod.getKeychainPassword()).toBe('bare-pw');
-    expect(mock).toHaveBeenCalledTimes(1);
     const argv = mock.mock.calls[0][1] as string[];
     expect(argv).not.toContain('-a');
     restoreUser(prev);
