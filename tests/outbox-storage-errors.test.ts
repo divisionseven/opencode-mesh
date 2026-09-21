@@ -10,7 +10,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import * as ob from '../src/outbox.js';
 
 const ctl = vi.hoisted(() => ({
-  mode: 'full' as 'full' | 'corrupt' | 'bare-corrupt' | 'no-prepare' | 'undef' | 'no-stmt-fns' | 'commit-throw' | 'rollback-throw' | 'alter-duplicate' | 'alter-bare' | 'alter-other' | 'alter-mid' | 'alter-loop' | 'bare-code' | 'plain-error' | 'has-cols' | 'prepare-throw' | 'prepare-dup',
+  mode: 'full' as 'full' | 'full-node' | 'corrupt' | 'bare-corrupt' | 'no-prepare' | 'undef' | 'no-stmt-fns' | 'commit-throw' | 'rollback-throw' | 'alter-duplicate' | 'alter-bare' | 'alter-other' | 'alter-mid' | 'alter-loop' | 'bare-code' | 'plain-error' | 'has-cols' | 'prepare-throw' | 'prepare-dup',
 }));
 
 vi.mock('node:sqlite', () => {
@@ -29,6 +29,7 @@ vi.mock('node:sqlite', () => {
       },
       run: () => {
         if (ctl.mode === 'full') throw Object.assign(new Error('database is full'), { code: 'SQLITE_FULL' });
+        if (ctl.mode === 'full-node') throw Object.assign(new Error('database or disk is full'), { code: 'ERR_SQLITE_ERROR', errcode: 13 });
         if (ctl.mode === 'corrupt') throw Object.assign(new Error('database disk image is malformed'), { code: 'SQLITE_CORRUPT' });
         if (ctl.mode === 'bare-corrupt') throw { code: 'SQLITE_CORRUPT' };
         if (ctl.mode === 'bare-code') throw { code: 'SQLITE_FULL' };
@@ -111,6 +112,15 @@ describe('outbox storage-error vocabulary', () => {
   it('full disk on insert maps to STORAGE_FULL, never silent drop', async () => {
     const { root, restore } = await freshRoot('mesh-ob-full-');
     ctl.mode = 'full';
+    await expect(
+      ob.enqueue({ target_session: 'ses-T', from_session: 'ses-F', from_agent: 'a', text: 'hi' }, root)
+    ).rejects.toMatchObject({ code: 'STORAGE_FULL' });
+    await safeRm(root); restore();
+  });
+
+  it('node driver full shape (errcode 13, no code match) maps to STORAGE_FULL', async () => {
+    const { root, restore } = await freshRoot('mesh-ob-fullnode-');
+    ctl.mode = 'full-node';
     await expect(
       ob.enqueue({ target_session: 'ses-T', from_session: 'ses-F', from_agent: 'a', text: 'hi' }, root)
     ).rejects.toMatchObject({ code: 'STORAGE_FULL' });
