@@ -142,10 +142,10 @@ describe('fsAtomic', () => {
     if (prev === undefined) delete process.env.OPENCODE_MESH_ROOT; else process.env.OPENCODE_MESH_ROOT = prev;
     await safeRm(root);
   }, 60_000);
-  it('isLockContention reads EEXIST and EACCES as contention', async () => {
+  it('isLockContention reads EEXIST only as contention', async () => {
     const { isLockContention } = await import('../src/fsAtomic.js');
     expect(isLockContention({ code: 'EEXIST' })).toBe(true);
-    expect(isLockContention({ code: 'EACCES' })).toBe(true);
+    expect(isLockContention({ code: 'EACCES' })).toBe(false);
   });
   it('isLockContention reads other errors as non-contention', async () => {
     const { isLockContention } = await import('../src/fsAtomic.js');

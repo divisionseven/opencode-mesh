@@ -191,10 +191,10 @@ export async function withRegistryLock<T>(fn: () => Promise<T>, meshRoot?: strin
   throw lastErr;
 }
 
-/** True for EEXIST or EACCES; contention retries, real errors throw. */
+/** True for EEXIST only; contention retries, real errors throw. */
 export function isLockContention(err: unknown): boolean {
   const e = err as NodeJS.ErrnoException;
-  return e?.code === 'EEXIST' || e?.code === 'EACCES';
+  return e?.code === 'EEXIST';
 }
 
 /** Crash-safe write via temp plus fsync plus rename; readers never see tears. */
