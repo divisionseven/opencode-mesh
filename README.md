@@ -278,7 +278,16 @@ Messages travel through four stages: discovery, routing, delivery, and cleanup. 
 - **Registry**: The heartbeat file each process writes every 5 minutes
 - **Live status**: A TCP probe of each known port
 
-Every peer carries exactly one freshness badge: `status` (responding now), `heartbeat-recent` (heartbeat within the last 10 minutes), `db-truth` (exists in the database but no heartbeat), or `stale` (older than 24 hours). Ranking puts attached sessions first, then matches by directory, agent name, busy flag, and recency. Pick rank 1 first; `status` means send now, `stale` means re-check first. Ranking orders display only, it never hides rows.
+Every peer carries exactly one freshness badge:
+
+| Badge | Meaning |
+| ----- | ------- |
+| `status` | Responding on the live probe right now |
+| `heartbeat-recent` | Heartbeat within the last 10 minutes |
+| `db-truth` | Exists in the database but no heartbeat |
+| `stale` | Older than 24 hours |
+
+Ranking orders the list as a decision tree: attached sessions first, then directory match, agent name, busy flag, and recency. It never hides rows. Pick rank 1 first: `status` means send now, `stale` means re-check first.
 
 ### 2. Route the message
 
