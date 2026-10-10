@@ -12,8 +12,9 @@ and this project adheres to
 
 - Work from one plugin on OpenCode >= 1.3.13, with the same four tools and
   the same send, peers, and skill behavior on every host
-  (gate: export shape plus double-probe import legs green; live loopback
-  pending)
+  (gate: export shape plus double-probe import legs green; peers green on
+  v1 1.18.35 and v2 2.0.26; road test rollback clean, list back at
+  baseline)
 - Keep guards and message envelopes identical on every host
   (gate: wrapper-versus-barrel delegation matrix green, stable shape
   untouched)
