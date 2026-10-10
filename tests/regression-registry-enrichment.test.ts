@@ -248,7 +248,7 @@ describe('regression: directory dual header', () => {
   });
 
   it('probe fails when dir-target model stripped, degrades to queued with zero POSTs', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'mesh-dir-dual-mutant-'));
+    const root = await mkdtemp(join(tmpdir(), 'mesh-dir-dual-control-'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     const prevDb = process.env.OPENCODE_MESH_DB_PATH;
     process.env.OPENCODE_MESH_ROOT = root;

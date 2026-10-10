@@ -1,7 +1,7 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
 // Quarantine default-off passthrough plus opt-in classes.
-// Mutants redden when gating or tagging scope changes.
+// Negative controls fail when the gating or tagging scope changes.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -170,8 +170,8 @@ describe('quarantine: both-legs passthrough at default', () => {
     await safeRm(root); restore();
   });
 
-  it('mutant probe: stripping the quarantine seed model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-qdirect-mutant-');
+  it('negative control: removing the quarantine-target model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-qdirect-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['q-peer'] = { sessionId: 'q-peer', agent: 'a', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };

@@ -330,7 +330,7 @@ describe('db-grounded discovery', () => {
     await safeRm(root); restore();
   });
 
-  it('10 mutants plus guards — loader-throw fail-closed, no clobber reversal, model untouched, GC empty no-delete', async () => {
+  it('controls plus guards: fail-closed, no clobber, model kept, empty GC kept', async () => {
     const d = await import('../src/discovery.js');
     const now = Date.now();
     expect(await d.readDbSessions(join(tmpdir(), 'mesh-dgd-nope', 'x.db'))).toEqual({});

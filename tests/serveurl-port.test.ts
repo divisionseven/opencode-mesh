@@ -150,8 +150,8 @@ describe('loopback pin: POST base is OPENCODE_PORT loopback, never registry addr
     await safeRm(root); restore();
   });
 
-  it('mutant probe: stripping the pin seed model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-port-mutant-');
+  it('negative control: removing the port-target model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-port-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['port-target'] = {

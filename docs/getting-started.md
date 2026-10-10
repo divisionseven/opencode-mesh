@@ -32,7 +32,7 @@ node --version
 
 ### OpenCode
 
-Version 1.x (1.3.13 or higher, below 2.0.0). Tested against 1.18.x.
+Version >= 1.3.13.
 
 ```bash
 # npm
@@ -46,7 +46,7 @@ Verify:
 
 ```bash
 opencode --version
-# 1.3.13 or higher, below 2.0.0 (1.x only)
+# >= 1.3.13
 ```
 
 ### Platform notes
@@ -60,7 +60,7 @@ Three paths. Pick one.
 ### Path 1: OpenCode Plugin (recommended)
 
 ```bash
-# requires opencode 1.x (1.3.4+, below 2.0.0)
+# requires opencode >= 1.3.13
 opencode plugin opencode-mesh --global
 npx skills add divisionseven/opencode-mesh --agent opencode --global --yes
 ```
@@ -173,7 +173,8 @@ snapshot. Nothing else. No network fetches, no daemon, no session changes.
 
 ### OpenCode version scope
 
-`opencode-mesh` currently supports opencode 1.x only (`>=1.3.13 <2.0.0`). On the `opencode2` v2 beta the plugin is silently skipped: the beta host expects a dual `{id, setup}` export shape the mesh does not ship, so no mesh tools appear and no error is raised. Stay on the opencode 1.x binary for now; v2 support is in scope and planned for a future release. Detail: [Troubleshooting](troubleshooting.md#opencode-2-beta-plugin-absent).
+`opencode-mesh` works with `opencode` >= 1.3.13.
+Detail: [Troubleshooting](troubleshooting.md#plugin-entry-triage).
 
 ## Section 3: Manual Use
 

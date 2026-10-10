@@ -331,7 +331,8 @@ describe('pure TUI-identical — harness gates', () => {
     if (!spyEnvFailed && spyEnv) { expect(spyEnv).not.toHaveBeenCalled(); spyEnv.mockRestore(); } else { console.log('SKIP_NO_SPY env fast-path shell-out check (ESM spy not configurable)'); }
     vi.resetModules();
 
-    // Case B: Keychain is opt-in only (H1b) — flag-unset never leaks even with an entry present
+    // Case B: keychain stays opt-in only, so an unset flag never leaks a
+    // stored entry even when one is present
     delete process.env.OPENCODE_SERVER_PASSWORD;
     delete process.env.OPENCODE_SERVER_USERNAME;
     delete process.env.OPENCODE_MESH_KEYCHAIN_PROVIDER;
@@ -901,8 +902,8 @@ describe('edge', () => {
     vi.restoreAllMocks();
   });
 
-  it('mutant probe: stripping the prompt echo seed model degrades to queued with zero POSTs', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'mesh-prompt-mutant-'));
+  it('negative control: removing the prompt-target model queues with zero POSTs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'mesh-prompt-control-'));
     const prev = process.env.OPENCODE_MESH_ROOT;
     const prevDb = process.env.OPENCODE_MESH_DB_PATH;
     process.env.OPENCODE_MESH_ROOT = root;
@@ -921,9 +922,16 @@ describe('edge', () => {
       }
       return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
     }) as unknown as typeof fetch;
-    const { mesh_send: msMutant } = await import('../src/tools/mesh_send.js');
+    const { mesh_send: msControl } = await import('../src/tools/mesh_send.js');
     const out = JSON.parse(
-      String((await (msMutant.execute as any)({ target: 'prompt-target', text: 'hello prompt' }, { sessionID: 'caller-prompt', directory: '/tmp' })).output),
+      String(
+        (
+          await (msControl.execute as any)(
+            { target: 'prompt-target', text: 'hello prompt' },
+            { sessionID: 'caller-prompt', directory: '/tmp' },
+          )
+        ).output,
+      ),
     ) as { via: string };
     expect(posted).toEqual([]);
     expect(out.via).toBe('queued');

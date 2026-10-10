@@ -1,8 +1,9 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
 // Prod plugin module carries ONLY the default export.
-// Mutant: restore `export { pollClaimer }` in plugin/opencode-mesh.ts and the
-// shape gates redden (host treats every function export as a plugin entry).
+// Negative control: restoring `export { pollClaimer }` in
+// plugin/opencode-mesh.ts fails the shape checks below (the host treats
+// every function export as a plugin entry).
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
 afterEach(() => {

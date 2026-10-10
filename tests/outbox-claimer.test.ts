@@ -114,7 +114,8 @@ describe('outbox: durable queue with atomic claim', () => {
     expect(claimed.length).toBe(2);
     // fresh claims stay held under the real timeout
     expect(await ob.requeueStale(OUTBOX_CLAIM_TIMEOUT_MS, root)).toBe(0);
-    // clock mutant (timeout zero) releases everything — proves the timeout gates, not the call
+    // Zero-timeout control releases everything, which proves the timeout
+    // value (not the call itself) drives the release
     expect(await ob.requeueStale(0, root)).toBe(2);
     const again = await ob.claim(['ses-T'], 'owner-2', 2, root);
     expect(again.length).toBe(2);
@@ -141,7 +142,7 @@ describe('outbox: durable queue with atomic claim', () => {
     expect(row.id).toBe(id);
     // claimer omits messageID on the wire (server brands canonical) — ack by row id succeeds
     expect(await ob.ack(row.id, 'owner-1', root)).toBe(true);
-    // mutant swapping in a synthetic name fails lookup
+    // Control: ack with a synthetic name fails lookup
     expect(await ob.ack('synthetic-name.json', 'owner-1', root)).toBe(false);
     await safeRm(root); restore();
   });
@@ -452,8 +453,8 @@ describe('outbox: durable queue with atomic claim', () => {
     await safeRmArmed(root); restore();
   });
 
-  it('mutant probe: stripping the busy seed model releases before the status wait', async () => {
-    const { root, restore } = await freshRoot('mesh-qbusy-mutant-');
+  it('negative control: removing the busy-peer model releases before the status wait', async () => {
+    const { root, restore } = await freshRoot('mesh-qbusy-control-');
     const prev = process.env.OPENCODE_MESH_ROOT;
     process.env.OPENCODE_MESH_ROOT = root;
     const injected: unknown[] = [];

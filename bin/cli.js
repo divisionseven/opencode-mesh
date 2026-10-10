@@ -44,16 +44,21 @@ requireDist();
 if (cmd === "install") {
   const dryRun = args.includes("--dry-run");
   const { resolveMeshRoot } = await import("../dist/xdg.js");
-  const { SNAPSHOT_SUBPATH, PLUGIN_ENTRY, SKILL_SUBPATH } = await import("../dist/install/paths.js");
-  const { validateMeshRoot, detectStowRoot, stowedWrite } = await import("../dist/install/stow.js");
-  const { editPluginArrayText } = await import("../dist/install/opencodeConfig.js");
-  const { ensureDir0700, writeAtomic, fsyncDir } = await import("../dist/fsAtomic.js");
+  const { PLUGIN_ENTRY, SKILL_SUBPATH } = await import("../dist/install/paths.js");
+  const { validateMeshRoot, detectStowRoot, stowedWrite, writeSplitSnapshot } = await import("../dist/install/stow.js");
+  const { editPluginArrayText, editPluginsArrayText } = await import("../dist/install/opencodeConfig.js");
+  const { ensureDir0700, writeAtomic } = await import("../dist/fsAtomic.js");
   const root = resolveMeshRoot(); validateMeshRoot(root);
   const live = resolve(homedir(), ".config/opencode/opencode.json");
+  const cliLive = resolve(homedir(), ".config/opencode/cli.json");
   const det = detectStowRoot(live);
   const src = det.sourcePath;
   let raw = ""; try { raw = await readFile(src, "utf8"); } catch { try { raw = await readFile(live, "utf8"); } catch { raw = "{}"; } }
-  const res = editPluginArrayText(raw, PLUGIN_ENTRY, "add");
+  // Dual-key splice: edit both the V1 `plugin` key and the V2 `plugins`
+  // key; changed is true when either edit changed the text.
+  const resV1 = editPluginArrayText(raw, PLUGIN_ENTRY, "add");
+  const resV2 = editPluginsArrayText(resV1.text, PLUGIN_ENTRY, "add");
+  const res = { text: resV2.text, changed: resV1.changed || resV2.changed };
   if (dryRun) {
     console.log("dry-run diff:");
     const a = raw.split("\n"), b = res.text.split("\n");
@@ -75,12 +80,14 @@ if (cmd === "install") {
     console.log(`skill written ${skillTarget}`);
   }
   if (!res.changed) { console.log("already installed"); process.exit(0); }
-  const snapDir = resolve(homedir(), SNAPSHOT_SUBPATH, String(Date.now()));
-  await ensureDir0700(snapDir);
-  const snapPath = resolve(snapDir, "opencode.json.raw");
-  await writeAtomic(snapPath, raw, { mode: 0o600 }); await fsyncDir(snapDir);
+  // Split snapshot unit: both config raws before either write (cli.json is
+  // never written by this installer; its raw-or-absent is provenance).
+  const cliDet = detectStowRoot(cliLive);
+  let cliRaw = null;
+  try { cliRaw = await readFile(cliDet.sourcePath, "utf8"); } catch { try { cliRaw = await readFile(cliLive, "utf8"); } catch { cliRaw = null; } }
+  const snap = await writeSplitSnapshot(raw, cliRaw, { isStowed: det.isStowed, sourcePath: src });
   await stowedWrite(src, res.text, { mode: 0o644 });
-  console.log(`installed ${det.isStowed ? src + " (stowed)" : live}`);
+  console.log(`installed ${det.isStowed ? src + " (stowed)" : live} (plugin + plugins keys, snapshot ${snap.dir})`);
   console.log("Restart opencode to pick up plugin; then: opencode-mesh status");
   process.exit(0);
 } else if (cmd === "uninstall") {
@@ -89,8 +96,8 @@ if (cmd === "install") {
   const restore = args.includes("--restore");
   const { resolveMeshRoot } = await import("../dist/xdg.js");
   const { PLUGIN_ENTRY } = await import("../dist/install/paths.js");
-  const { validateMeshRoot, detectStowRoot, stowedWrite, latestSnapshot } = await import("../dist/install/stow.js");
-  const { editPluginArrayText } = await import("../dist/install/opencodeConfig.js");
+  const { validateMeshRoot, detectStowRoot, stowedWrite, latestSnapshot, readSplitSnapshot } = await import("../dist/install/stow.js");
+  const { editPluginArrayText, editPluginsArrayText } = await import("../dist/install/opencodeConfig.js");
   const root = resolveMeshRoot(); validateMeshRoot(root);
   const live = resolve(homedir(), ".config/opencode/opencode.json");
   const det = detectStowRoot(live);
@@ -98,14 +105,23 @@ if (cmd === "install") {
   if (restore) {
     const snap = await latestSnapshot();
     if (!snap) { console.error("no snapshot to restore"); process.exit(1); }
-    let content = "";
-    try { content = await readFile(snap.path, "utf8"); }
-    catch { console.error(`snapshot unreadable ${snap.path}`); process.exit(1); }
-    await stowedWrite(src, content, { mode: 0o644 });
+    const unit = await readSplitSnapshot(snap.dir);
+    if (!unit) { console.error(`snapshot unreadable ${snap.path}`); process.exit(1); }
+    await stowedWrite(src, unit.opencodeRaw, { mode: 0o644 });
     console.log(`restored ${src} from ${snap.dir}`);
+    if (unit.cliRaw !== null) {
+      const cliLivePath = resolve(homedir(), ".config/opencode/cli.json");
+      const cliDet = detectStowRoot(cliLivePath);
+      await stowedWrite(cliDet.sourcePath, unit.cliRaw, { mode: 0o644 });
+      console.log(`restored ${cliDet.sourcePath} from ${snap.dir}`);
+    } else {
+      console.log("cli.json untouched (absent at snapshot; the installer never writes it)");
+    }
   }
   let raw = ""; try { raw = await readFile(src, "utf8"); } catch { try { raw = await readFile(live, "utf8"); } catch { raw = "{}"; } }
-  const res = editPluginArrayText(raw, PLUGIN_ENTRY, "remove");
+  const resV1 = editPluginArrayText(raw, PLUGIN_ENTRY, "remove");
+  const resV2 = editPluginsArrayText(resV1.text, PLUGIN_ENTRY, "remove");
+  const res = { text: resV2.text, changed: resV1.changed || resV2.changed };
   if (!res.changed) { console.log("already uninstalled"); }
   else { await stowedWrite(src, res.text, { mode: 0o644 }); console.log(`uninstalled ${src}`); }
   if (purge) {
@@ -123,12 +139,37 @@ if (cmd === "install") {
   const { unwrapStatusMap } = await import("../dist/registry.js");
   const { getServerAuthHeaderSync } = await import("../dist/serverAuth.js");
   const { SKILL_SUBPATH } = await import("../dist/install/paths.js");
+  const { detectStowRoot } = await import("../dist/install/stow.js");
+  const { classifyPluginInstall, rollupPluginPresence } = await import("../dist/install/statusMatrix.js");
   const start = Date.now();
   const live = resolve(homedir(), ".config/opencode/opencode.json");
+  const cliLive = resolve(homedir(), ".config/opencode/cli.json");
   const portConstant = OPENCODE_PORT;
   const portSource = process.env.OPENCODE_PORT ? "env" : "default";
   const checks = await Promise.all([
-    (async () => { try { const t = await readFile(live, "utf8"); return t.includes("opencode-mesh") ? "present" : "absent"; } catch { try { const s = await import("../dist/install/stow.js"); const d = s.detectStowRoot(live); const tt = await readFile(d.sourcePath, "utf8"); return tt.includes("opencode-mesh") ? "present" : "absent"; } catch { return "absent"; } } })(),
+    (async () => {
+      // Six-state truth: structural reads of both keys in opencode.json plus
+      // cli.json plugins; the rollup keeps the present/absent contract while
+      // pluginSources carries the state (absent, legacy-only, native-only,
+      // dual-server, cli-augmented, disabled) plus the spec-mismatch flag.
+      const readRaw = async (p) => { try { return await readFile(p, "utf8"); } catch { return null; } };
+      let opencodeRaw = await readRaw(live);
+      if (opencodeRaw === null) {
+        try {
+          const s = detectStowRoot(live);
+          opencodeRaw = await readRaw(s.sourcePath);
+        } catch { opencodeRaw = null; }
+      }
+      let cliRaw = await readRaw(cliLive);
+      if (cliRaw === null) {
+        try {
+          const s = detectStowRoot(cliLive);
+          cliRaw = await readRaw(s.sourcePath);
+        } catch { cliRaw = null; }
+      }
+      const c = classifyPluginInstall(opencodeRaw, cliRaw);
+      return { rollup: rollupPluginPresence(c), state: c.state, detail: c.detail };
+    })(),
     (async () => { try { await stat(resolve(homedir(), ".config", SKILL_SUBPATH)); return "present"; } catch { return "not_shipped"; } })(),
     (async () => { const r = resolveMeshRoot(); const prov = process.env.OPENCODE_MESH_ROOT ? "OPENCODE_MESH_ROOT" : process.env.XDG_STATE_HOME ? "XDG_STATE_HOME" : "default"; return { resolved: r, provenance: prov }; })(),
     (async () => { try { const s = await stat(resolveMeshRoot()); return (s.mode & 0o777).toString(8); } catch { return "absent"; } })(),
@@ -154,12 +195,15 @@ if (cmd === "install") {
     })(),
     (async () => { try { await stat(resolveOutboxPath()); return "reachable"; } catch { return "absent"; } })(),
   ]);
-  const [plugin, skill, meshRoot, regPerm, portInfo, outbox] = checks;
+  const [pluginInfo, skill, meshRoot, regPerm, portInfo, outbox] = checks;
+  const plugin = pluginInfo.rollup;
+  const pluginSources = { state: pluginInfo.state, ...pluginInfo.detail };
   const elapsed = Date.now() - start;
-  const out = { plugin, skill, meshRoot, registryPerm: regPerm, outbox, port: { constant: portConstant, source: portSource, ...portInfo }, elapsedMs: elapsed };
+  const out = { plugin, pluginSources, skill, meshRoot, registryPerm: regPerm, outbox, port: { constant: portConstant, source: portSource, ...portInfo }, elapsedMs: elapsed };
   if (json) console.log(JSON.stringify(out, null, 2));
   else {
     console.log(`plugin: ${plugin}`);
+    console.log(`pluginState: ${pluginInfo.state}`);
     console.log(`skill: ${skill}`);
     console.log(`meshRoot: ${JSON.stringify(meshRoot)}`);
     console.log(`registryPerm: ${regPerm}`);

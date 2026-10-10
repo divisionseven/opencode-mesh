@@ -171,7 +171,7 @@ describe('delivery: wire bytes identical to PromptInput subset', () => {
   });
 
   it('probe fails when echo seed model stripped, degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-wire-mutant-');
+    const { root, restore } = await freshRoot('mesh-wire-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: any) => {
       reg['wire-target'] = { sessionId: 'wire-target', agent: 'a', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' } as any;

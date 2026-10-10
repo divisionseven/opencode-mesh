@@ -1,7 +1,8 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
 // Receiver keeps its own agent plus model.
-// Server diff computes zero difference; mutant sender triple reddens non-controls.
+// Server diff computes zero difference; a forged sender fails the
+// non-control checks.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
