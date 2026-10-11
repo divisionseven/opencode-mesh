@@ -8,6 +8,21 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- Work from one plugin on OpenCode >= 1.3.13, with the same four tools and
+  the same send, peers, and skill behavior on every host
+  (gate: export shape plus double-probe import legs green; peers green on
+  v1 1.18.35 and v2 2.0.26; road test rollback clean, list back at
+  baseline)
+- Keep guards and message envelopes identical on every host
+  (gate: wrapper-versus-barrel delegation matrix green, stable shape
+  untouched)
+- Install and restore the plugin entry idempotently, and report six install
+  states the same way each time
+  (gate: dual-key splicer plus idempotent install plus byte-equal restore
+  plus six-state matrix green)
+
 ## [1.1.0] - 2026-09-21
 
 ### Added
@@ -39,7 +54,7 @@ and this project adheres to
 
 ### Removed
 
-- Drop the broadcast mutant probe and registry retention probe: both read repo source and asserted on text, banned under the vitest rules, with behavior already owned by gate and prune tests (gate: full suite green minus two plus a repo-wide source-read sweep)
+- Drop the broadcast source-reading probe and registry retention probe: both read repo source and asserted on text, banned under the vitest rules, with behavior already owned by gate and prune tests (gate: full suite green minus two plus a repo-wide source-read sweep)
 
 ## [1.0.1] - 2026-09-19
 

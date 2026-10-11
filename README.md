@@ -106,9 +106,9 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 *Windows is currently untested. Please submit an issue to report its functionality.*
 
 > [!NOTE]
-> OpenCode-Mesh is currently compatible with [OpenCode v1][link-opencode] (>= 1.3.13, < 2.0.0).
-> Support for [OpenCode v2][opencode-v2-docs] (`opencode2`) is scheduled for a future release.
-> If you are a v2 user, please [submit an issue][gh-issues-link] so we can more accurately gauge demand.
+> OpenCode-Mesh works with [OpenCode][link-opencode] >= 1.3.13. Both generations
+> use the single `opencode` binary. Tested on `1.18.35` and `2.0.26`.
+> Older hosts: file a GitHub issue.
 
 ### Prerequisites:
 
@@ -142,7 +142,7 @@ node --version
 </details>
 
 <details>
-<summary><strong>OpenCode 1.x (>= 1.3.13, < 2.0.0)</strong></summary>
+<summary><strong>OpenCode (>= 1.3.13)</strong></summary>
 
 **Install:**
 
@@ -158,7 +158,7 @@ brew install opencode
 
 ```bash
 opencode --version
-# 1.3.13 or higher, below 2.0.0 (opencode2 support planned)
+# >= 1.3.13
 ```
 
 > [!TIP]
@@ -208,7 +208,7 @@ npx opencode-mesh status
 ```
 
 **What `install` does**:
-- Adds the new `plugin` entry in `~/.config/opencode/opencode.json`
+- Adds the `plugin` entry in `~/.config/opencode/opencode.json`
 - Adds the accompanying agent skill at `~/.config/opencode/skills/opencode-mesh/SKILL.md` (so your agents know how to use it effectively)
 - A `~/.cache` snapshot is created of your prior config for added safety.
 
@@ -453,7 +453,6 @@ Small surface, strict gates: fork, branch, Conventional Commits, paste verificat
 - **Admitted is not seen.** `via: "admitted"` is a server 204, never proof the reader saw it, confirm through the receiver's conversation.
 - **Queued rows expire.** Outbox TTL is 10m with 25 attempts and a 100-deep per-target cap (`src/constants.ts`), rows past TTL dead-letter with audit, re-send after `failed-permanent` or `dead-lettered`.
 - **Expiry is idle-based.** Subagents 30m, primaries 48h, registry prune 24h (`src/constants.ts`, `src/expiry.ts`), a quiet-but-alive session can read expired, heartbeat every 5m prevents that while running.
-- **OpenCode 1.x only.** Requires opencode `>=1.3.13 <2.0.0`. On the `opencode2` v2 beta (which now shares the same `opencode` binary as v1), hosts expect a dual `{id, setup}` export shape that the mesh does not currently ship, so the plugin loads nothing with no error. Stay on the opencode 1.x binary for now; opencode v2 support is in scope and is planned for a future release. If you are an `opencode2` user, please submit an issue so we can gauge demand. See [Troubleshooting](docs/troubleshooting.md#opencode-2-beta-plugin-absent).
 
 ## License
 

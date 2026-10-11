@@ -42,12 +42,20 @@ export function stowRoot(): string {
 /** Detect stowed opencode.json; unstowed reads source as live. */
 export function detectStowRoot(livePath: string): { isStowed: boolean; sourcePath: string; livePath: string; packageName: string } {
   const pkg = "opencode"; const live = resolve(livePath);
+  // Leaf-parameterized by filename: opencode.json and cli.json share the stow
+  // package layout. Stowed when the real path equals the stow source for the
+  // canonical opencode.json leaf (live files may be named arbitrarily) or for
+  // the live basename leaf (the cli.json case).
+  const leaf = live.split(sep).pop() ?? "opencode.json";
+  const candidates = new Set([
+    resolve(stowRoot(), "opencode", ".config", "opencode", "opencode.json"),
+    resolve(stowRoot(), "opencode", ".config", "opencode", leaf),
+  ]);
   try {
     const st = lstatSync(live);
     if (st.isSymbolicLink()) {
       const real = realpathSync(live);
-      const expected = resolve(stowRoot(), "opencode", ".config", "opencode", "opencode.json");
-      if (real === expected || real.includes("dotfiles/opencode")) return { isStowed: true, sourcePath: real, livePath: live, packageName: pkg };
+      if (candidates.has(real) || real.includes("dotfiles/opencode")) return { isStowed: true, sourcePath: real, livePath: live, packageName: pkg };
     }
   } catch {}
   return { isStowed: false, sourcePath: live, livePath: live, packageName: pkg };
@@ -109,4 +117,70 @@ export async function stowedWrite(sourcePath: string, content: string, opts?: { 
     try { await pExecFile("stow", ["opencode", "--restow", "--no-folding"], { cwd }); } catch {}
     await verifyLeaf(livePath, target);
   }
+}
+
+/** Marker file content recording that cli.json was absent at snapshot time. */
+export const CLI_ABSENT_MARKER = "ABSENT\n";
+
+/** Split snapshot unit: both config raws plus a manifest, or fail loud. */
+export interface SplitSnapshot {
+  dir: string;
+  opencodePath: string;
+  cliPath: string;
+  manifestPath: string;
+  cliExisted: boolean;
+}
+
+/**
+ * Snapshot both config files before either write. cli.json is never written
+ * by the mesh installer; its raw (or absent marker) is provenance so restore
+ * can replay the unit or fail loud. Snapshot raws stay 0600.
+ */
+export async function writeSplitSnapshot(
+  opencodeRaw: string,
+  cliRaw: string | null,
+  meta: { isStowed: boolean; sourcePath: string }
+): Promise<SplitSnapshot> {
+  const dir = resolve(homedir(), SNAPSHOT_SUBPATH, String(Date.now()));
+  await ensureDir0700(dir);
+  const opencodePath = resolve(dir, "opencode.json.raw");
+  const cliPath = resolve(dir, "cli.json.raw");
+  const manifestPath = resolve(dir, "manifest.json");
+  await writeAtomic(opencodePath, opencodeRaw, { mode: 0o600 });
+  await writeAtomic(cliPath, cliRaw === null ? CLI_ABSENT_MARKER : cliRaw, { mode: 0o600 });
+  await writeAtomic(
+    manifestPath,
+    JSON.stringify({ epoch: dir.split(sep).pop(), ...meta, cliExisted: cliRaw !== null }, null, 2),
+    { mode: 0o600 }
+  );
+  await fsyncDir(dir);
+  return { dir, opencodePath, cliPath, manifestPath, cliExisted: cliRaw !== null };
+}
+
+/**
+ * Read a split snapshot unit. Returns null when the dir holds no opencode
+ * raw (not a snapshot). cliRaw is null when the absent marker was recorded.
+ */
+export async function readSplitSnapshot(
+  dir: string
+): Promise<{ opencodeRaw: string; cliRaw: string | null; manifest: Record<string, unknown> } | null> {
+  const { readFile } = await import("node:fs/promises");
+  let opencodeRaw: string;
+  try {
+    opencodeRaw = await readFile(resolve(dir, "opencode.json.raw"), "utf8");
+  } catch {
+    return null;
+  }
+  let cliRaw: string | null = null;
+  try {
+    const raw = await readFile(resolve(dir, "cli.json.raw"), "utf8");
+    cliRaw = raw === CLI_ABSENT_MARKER ? null : raw;
+  } catch {
+    cliRaw = null;
+  }
+  let manifest: Record<string, unknown> = {};
+  try {
+    manifest = JSON.parse(await readFile(resolve(dir, "manifest.json"), "utf8")) as Record<string, unknown>;
+  } catch {}
+  return { opencodeRaw, cliRaw, manifest };
 }

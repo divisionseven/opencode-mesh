@@ -1,7 +1,8 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
 // Wake-by-default matrix for both legs plus env precedence.
-// Default omits noReply so Runner runs; silent pins it. Mutants redden on scope change.
+// Default omits noReply so Runner runs; silent pins it. Negative controls
+// fail when that scope changes.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -155,8 +156,8 @@ describe('wake: direct leg key presence', () => {
     await safeRm(root); restore();
   });
 
-  it('mutant probe: stripping the peer model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-wakemutant-');
+  it('negative control: removing the peer model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-wake-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['wake-peer'] = { sessionId: 'wake-peer', agent: 'a', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };
