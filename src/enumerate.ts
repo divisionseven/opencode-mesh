@@ -21,7 +21,7 @@ export interface ServerSight {
   observedAt: number;
 }
 
-function enumPorts(explicit?: number[]): number[] {
+export function enumPorts(explicit?: number[]): number[] {
   const fromEnv = (process.env.MESH_ENUM_PORTS ?? "")
     .split(",")
     .map((s) => Number(s.trim()))

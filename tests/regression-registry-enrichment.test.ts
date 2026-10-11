@@ -187,7 +187,7 @@ describe('regression: broadcast deduped sequential', () => {
     let fetchCalls = 0;
     globalThis.fetch = vi.fn(async (url: string) => {
       const u = String(url);
-      if (u.includes('/session/status')) { fetchCalls++; return { ok: true, json: async () => ({}) } as unknown as Response; }
+      if (u.includes('/session/status')) { fetchCalls++; return { ok: true, json: async () => ({ 'bcast-0': { type: 'idle' } }) } as unknown as Response; }
       if (u.includes('prompt_async')) { await new Promise(r => setTimeout(r, 2)); return { ok: true, status: 204 } as unknown as Response; }
       return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
     }) as unknown as typeof fetch;

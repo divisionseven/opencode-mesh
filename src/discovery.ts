@@ -218,9 +218,19 @@ export function mergeStatus(tcp: StatusMap | null, live: StatusMap | null): Stat
   return { ...(tcp ?? {}), ...(live ?? {}) };
 }
 
-/** TCP single-port map only: the one view safe for confirmed-dead persistence. */
+/** TCP status view: v1 single-port map, v1-plus-v2 union only when it misses. */
 export async function readTcpStatus(): Promise<StatusMap | null> {
-  return fetchSinglePortStatusMap();
+  const single = await fetchSinglePortStatusMap();
+  // Fast path keeps v1-green behavior (and probe counts) identical; the
+  // union runs solely where the pin is dark, which is exactly the v2 case.
+  // Lazy import keeps discovery free of a module-level back edge.
+  if (single) return single;
+  try {
+    const { activeUnion } = await import("./v2routes.js");
+    return await activeUnion();
+  } catch {
+    return null;
+  }
 }
 
 function baseRepo(dir: string): string {

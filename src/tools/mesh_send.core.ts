@@ -9,6 +9,12 @@ import { isSilent, resolveNoReply } from "../wake.js";
 import { assertBodySendable, assertSendable } from "../outbox.js";
 import { readRegistry } from "../registry.js";
 import { getServerAuthHeaderSync } from "../serverAuth.js";
+import {
+  activeUnion,
+  locateSession,
+  postV2Prompt,
+  v2RowToTriple,
+} from "../v2routes.js";
 import { sanitizeSessionId } from "../xdg.js";
 
 /** Tool description shared by the V1 shell and the V2 adapter (single source). */
@@ -72,8 +78,10 @@ function isBroadcastEnabled(): boolean {
 }
 
 /**
- * Loopback pin: dials only 127.0.0.1 OPENCODE_PORT; registry addresses never dialed.
- * Probe failure claims instead of throwing, so down servers queue.
+ * Loopback pin: dials only 127.0.0.1 probed ports; registry addresses never
+ * dialed. Probe failure claims instead of throwing, so down servers queue.
+ * v1 status first (unchanged single-port contract), then the v1-plus-v2
+ * union across probed ports (v2 servers answer /api/session/active only).
  */
 async function resolveRoute(viaAuth: string | undefined): Promise<"direct" | "claim"> {
   try {
@@ -83,6 +91,11 @@ async function resolveRoute(viaAuth: string | undefined): Promise<"direct" | "cl
     if (res.ok) return "direct";
     // Why: degraded leg — any probe failure (timeout, refused, non-ok) claims
     // instead of throwing, so a down server queues instead of dropping.
+  } catch {}
+  try {
+    // v2-only union: the v1 pin above just missed, so probing it again
+    // would double the send-path status touches the broadcast gate pins.
+    if (await activeUnion(undefined, viaAuth, { v1: false })) return "direct";
   } catch {}
   return "claim";
 }
@@ -172,6 +185,65 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
 
   const directoryFromCtx = ctx.directory;
   const agentFromCtx = ctx.agent;
+  /**
+   * v2 inject leg: locates the session across probed ports (v1 shape first,
+   * v2 shape next), resolves the receiver triple from the v2 row merged over
+   * the stored entry, and admits via user admission. Returns the wire
+   * id on admit, null when the v2 leg cannot address or reach the target
+   * (caller degrades to claim), and throws the typed miss vocabulary loud.
+   */
+  const sendV2Direct = async (
+    peerId: string,
+    prefixed: string,
+    viaAuth: string | undefined,
+    wakeOpts?: { silent?: boolean; noReply?: boolean },
+  ): Promise<string | null> => {
+    const located = await locateSession(peerId, undefined, viaAuth);
+    if (!located || located.kind !== "v2") return null;
+    const triple = v2RowToTriple(located.row);
+    const stored = (reg as Record<string, RegEntry>)[peerId] ?? {};
+    const merged: RegEntry = { ...stored, ...(triple ?? {}) };
+    const resolved = (
+      await resolveReceiverWireDetailed(null, peerId, merged, {
+        directRow: located.row,
+      })
+    ).receiver;
+    if (!resolved) return null;
+    const posted = await postV2Prompt(
+      located.port,
+      peerId,
+      prefixed,
+      wakeOpts,
+      viaAuth,
+    );
+    if (posted.ok) {
+      const { newMessageId } = await import("../outbox.js");
+      return posted.id ?? newMessageId();
+    }
+    if (posted.status === 404) {
+      const peers = buildDidYouMean(reg);
+      throw new MeshError("PEER_NOT_FOUND", `peer not found: ${peerId}`, {
+        didYouMean: peers,
+      });
+    }
+    if (posted.status === 401)
+      throw new MeshError("UNAUTHORIZED", "unauthorized 401 Basic mismatch");
+    if (posted.status === 413)
+      throw new MeshError("PAYLOAD_TOO_LARGE", "1MB guard 413");
+    if (posted.status === 429)
+      throw new MeshError("PEER_BUSY_RETRY", `peer busy 429: ${peerId}`, {
+        status: 429,
+      });
+    if (posted.status !== undefined)
+      throw new MeshError(
+        "SERVER_UNAVAILABLE",
+        `promptAsync failed ${posted.status}`,
+        { status: posted.status },
+      );
+    // Network failure without a status degrades to claim like a transient.
+    return null;
+  };
+
   const sendDirect = async (peerId: string, from: string, msgText: string, viaAuth: string | undefined, dir: string | undefined, wakeOpts?: { silent?: boolean; noReply?: boolean }): Promise<string | null> => {
     // Lazy outbox import at call time (module carries zero static sqlite edges,
     // so the direct TCP path never touches storage): always-branded wire ID rule.
@@ -199,7 +271,9 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     const receiver = (
       await resolveReceiverWireDetailed(null, peerId, (reg as Record<string, RegEntry>)[peerId], { directRow })
     ).receiver;
-    if (!receiver) return null;
+    // Identity degrade: unresolvable triple tries the v2 leg (v2 rows carry
+    // agent plus model where the registry learned neither), then queues.
+    if (!receiver) return sendV2Direct(peerId, prefixed, viaAuth, wakeOpts);
     const parts = [{ type: "text" as const, text: prefixed }];
     // Why: no inline send-path sleeps — jitter lives inside queue policy
     // (claimer busy-wait). Direct admit never waits on peer state.
@@ -217,7 +291,16 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
       ...resolveNoReply(wakeOpts),
     });
     assertBodySendable(Buffer.byteLength(body, "utf8"));
-    const res = await fetch(url, { method: "POST", headers, body, signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
+    let res: Response;
+    try {
+      res = await fetch(url, { method: "POST", headers, body, signal: AbortSignal.timeout(POST_TIMEOUT_MS) });
+    } catch (err) {
+      // Transport failure on the v1 leg tries v2 before queuing; a v2 admit
+      // beats a queued row, otherwise the original fault keeps its contract.
+      const admitted = await sendV2Direct(peerId, prefixed, viaAuth, wakeOpts);
+      if (admitted !== null) return admitted;
+      throw err;
+    }
     if (res.status === 404) {
       const peers = buildDidYouMean(reg);
       throw new MeshError("PEER_NOT_FOUND", `peer not found: ${peerId}`, { didYouMean: peers });

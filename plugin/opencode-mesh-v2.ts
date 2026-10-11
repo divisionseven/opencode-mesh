@@ -20,6 +20,7 @@ import {
 } from "../src/registry.js";
 import { BUILD_STAMP, VERSION } from "../src/version.js";
 import { isAttachedExempt } from "../src/expiry.js";
+import { deriveSessionType } from "../src/expiry.js";
 import { stampLastAction } from "../src/lastAction.js";
 import {
   clearClaimerTimer,
@@ -27,6 +28,7 @@ import {
   ensureClaimer,
   releaseClaimerOwner,
 } from "../src/claimer.js";
+import type { V2InjectClient } from "../src/claimer.js";
 import { startAttachPoller, stopAttachPoller } from "../src/attach.js";
 import {
   MESH_REGISTER_DESCRIPTION,
@@ -48,6 +50,7 @@ import {
   removeV2Ids,
   v2OwnedIds,
 } from "../src/v2singleflight.js";
+import { v2ModelString } from "../src/v2routes.js";
 
 /** Stable V2 plugin id (also the status/diagnostics identity). */
 const MESH_V2_PLUGIN_ID = "opencode-mesh";
@@ -62,14 +65,103 @@ interface V2LifecycleEvent {
   data?: Record<string, unknown> | null;
 }
 
+/** Narrow view of a v2 SessionInfo (session.get output or created data). */
+interface V2SessionFields {
+  agent?: unknown;
+  model?: unknown;
+  title?: unknown;
+  directory?: unknown;
+  location?: { directory?: unknown } | null;
+  parentID?: unknown;
+  sessionID?: unknown;
+}
+
+/** Read one field as a non-empty string; objects and blanks read absent. */
+function v2Field(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/** Session directory: explicit field wins, event/location wrapper next. */
+function v2DirectoryOf(info: V2SessionFields): string | undefined {
+  return (
+    v2Field(info.directory) ?? v2Field(info.location?.directory) ?? undefined
+  );
+}
+
+/** Model to the registry string (providerID/id); unusable reads absent. */
+function v2ModelOf(info: V2SessionFields): string | undefined {
+  if (typeof info.model === "string" && info.model.length > 0) return info.model;
+  return v2ModelString(info.model);
+}
+
+/**
+ * Merge identity into the registry entry: parameters win, stored values
+ * fill gaps, generic titles never clobber real ones, repo derives from the
+ * directory at write time. Never throws (presence paths drop, never break).
+ */
+async function upsertV2Presence(
+  sessionId: string,
+  fields: V2SessionFields,
+): Promise<void> {
+  if (!sessionId) return;
+  const agent = v2Field(fields.agent);
+  const directory = v2DirectoryOf(fields);
+  const title = v2Field(fields.title);
+  const model = v2ModelOf(fields);
+  const sessionType =
+    fields.parentID === undefined || fields.parentID === null
+      ? undefined
+      : deriveSessionType(fields.parentID);
+  if (
+    agent === undefined &&
+    directory === undefined &&
+    title === undefined &&
+    model === undefined &&
+    sessionType === undefined
+  ) {
+    return;
+  }
+  try {
+    await atomicUpdateRegistry((reg) => {
+      const existing = (
+        reg as unknown as Record<string, Record<string, unknown>>
+      )[sessionId];
+      const next: Record<string, unknown> = {
+        ...(existing ?? {}),
+        sessionId,
+      };
+      if (agent !== undefined && agent !== "unknown") next.agent = agent;
+      else if (typeof next.agent !== "string") next.agent = "unknown";
+      if (directory !== undefined) {
+        next.directory = directory;
+        next.cwd = directory;
+      }
+      if (title !== undefined) {
+        next.description = title;
+        next.summary = title;
+        next.title = title;
+      }
+      if (model !== undefined) next.model = model;
+      if (sessionType !== undefined) next.sessionType = sessionType;
+      next.updatedAt = Date.now();
+      (reg as Record<string, unknown>)[sessionId] = next;
+    });
+  } catch {}
+}
+
 // Per-setup debounce mirroring the V1 EVICT_GRACE_MS fast path: repeat firings
 // inside the window cost zero writes. Shared-ownership merges into the guard;
 // this map stays per-setup so teardown never touches foreign ids.
 const v2SeenAt = new Map<string, number>();
 
+/** In-process v2 inject client for the claimer (first setup owns it). */
+let v2ClaimClient: V2InjectClient | null = null;
+
 /**
  * Best-effort presence touch for one session id: guard-merge plus registry
- * heartbeat plus last-action stamp. Never throws (event/hook paths drop, never break).
+ * heartbeat plus last-action stamp. Creates nothing (heartbeat on a missing
+ * id is a no-op by registry contract); identity arrives via ensureV2Presence
+ * and lifecycle data. Never throws (event/hook paths drop, never break).
  */
 async function touchV2Presence(sessionId: string): Promise<void> {
   if (!sessionId) return;
@@ -86,12 +178,84 @@ async function touchV2Presence(sessionId: string): Promise<void> {
   } catch {}
 }
 
+/** Last identity enrichment per id; bounds session.get to one read per window. */
+const v2EnrichedAt = new Map<string, number>();
+
+/** Minimal setup-context view the presence ensurer reads (no host types). */
+interface V2PresenceClient {
+  session?: {
+    get?: (input: { sessionID: string }) => Promise<unknown>;
+  };
+  location?: { directory?: string };
+}
+
 /**
- * V2 session lifecycle handler. Created touches presence; deleted
- * evicts with the attached-exempt guard; updated has no V2 counterpart
- * (manifest grep count 0) so freshness beyond this relies on TTL expiry with
- * ghost bound STALE_TTL_MS, never a name-matched silent subscribe. Other
- * events are no-ops by construction.
+ * Full presence for one session id: heartbeat touch plus identity enrich.
+ * Stored-complete rows skip the read; otherwise one session.get per window
+ * fills agent, directory, model, and title (the v2 counterparts of the v1
+ * resolveIdentity fields). The plugin-instance directory is a fallback only
+ * and never overrides a stored session directory. Never throws.
+ */
+async function ensureV2Presence(
+  client: V2PresenceClient,
+  sessionId: string,
+  toolAgent?: string,
+): Promise<void> {
+  if (!sessionId) return;
+  await touchV2Presence(sessionId);
+  const now = Date.now();
+  const enriched = v2EnrichedAt.get(sessionId);
+  if (enriched !== undefined && now - enriched < EVICT_GRACE_MS) return;
+  let stored: Record<string, unknown> | undefined;
+  try {
+    const reg = await readRegistry().catch(
+      () => ({}) as Record<string, unknown>,
+    );
+    stored = (reg as unknown as Record<string, Record<string, unknown>>)[
+      sessionId
+    ];
+  } catch {
+    stored = undefined;
+  }
+  const needsAgent =
+    typeof stored?.agent !== "string" || stored.agent === "unknown";
+  const needsDir =
+    typeof stored?.directory !== "string" &&
+    typeof stored?.cwd !== "string";
+  const needsModel = typeof stored?.model !== "string";
+  if (!needsAgent && !needsDir && !needsModel) return;
+  v2EnrichedAt.set(sessionId, now);
+  let info: V2SessionFields | null = null;
+  try {
+    const raw = await client.session?.get?.({ sessionID: sessionId });
+    const data =
+      raw && typeof raw === "object"
+        ? ((raw as Record<string, unknown>).data ?? raw)
+        : null;
+    if (data && typeof data === "object")
+      info = data as unknown as V2SessionFields;
+  } catch {
+    info = null;
+  }
+  const fallbackDir = needsDir
+    ? v2Field(client.location?.directory)
+    : undefined;
+  await upsertV2Presence(sessionId, {
+    agent: info?.agent ?? toolAgent,
+    model: info?.model,
+    title: info?.title,
+    directory: (info ? v2DirectoryOf(info) : undefined) ?? fallbackDir,
+    parentID: info?.parentID,
+  });
+}
+
+/**
+ * V2 session lifecycle handler. Created writes full presence from the event
+ * data (sessionID, location, agent, model, title all ride the payload);
+ * deleted evicts with the attached-exempt guard; updated has no V2
+ * counterpart (manifest grep count 0) so freshness beyond this relies on
+ * TTL expiry with ghost bound STALE_TTL_MS, never a name-matched silent
+ * subscribe. Other events are no-ops by construction.
  */
 async function handleV2Event(raw: unknown): Promise<void> {
   const event = raw as unknown as V2LifecycleEvent;
@@ -103,6 +267,9 @@ async function handleV2Event(raw: unknown): Promise<void> {
       event.id ??
       "";
     await touchV2Presence(id);
+    // Full identity rides the created payload; persist it so v2 rows carry
+    // the same agent, directory, model, and title v1 learns via resolveIdentity.
+    await upsertV2Presence(id, data as V2SessionFields);
     return;
   }
   if (event.type === "session.deleted") {
@@ -175,11 +342,14 @@ export default Plugin.define({
         const args = input as { summary?: string; description?: string };
         if (context.sessionID) {
           noteMine(context.sessionID);
-          await touchV2Presence(context.sessionID);
+          await ensureV2Presence(ctx, context.sessionID, context.agent);
         }
         const r = await executeMeshRegister(args, {
           sessionID: context.sessionID,
           agent: context.agent,
+          // Tool contexts carry no directory on v2 (schema); the plugin
+          // instance directory seeds fresh rows, stored rows keep theirs.
+          directory: ctx.location?.directory,
         });
         return { content: r.output };
       },
@@ -210,7 +380,7 @@ export default Plugin.define({
         };
         if (context.sessionID) {
           noteMine(context.sessionID);
-          await touchV2Presence(context.sessionID);
+          await ensureV2Presence(ctx, context.sessionID);
         }
         const r = await executeMeshPeers(args, { sessionID: context.sessionID });
         return { content: r.output };
@@ -241,7 +411,7 @@ export default Plugin.define({
         };
         if (context.sessionID) {
           noteMine(context.sessionID);
-          await touchV2Presence(context.sessionID);
+          await ensureV2Presence(ctx, context.sessionID, context.agent);
         }
         const r = await executeMeshSend(args, {
           sessionID: context.sessionID,
@@ -268,7 +438,7 @@ export default Plugin.define({
         const args = input as { text: string; noReply?: boolean; silent?: boolean };
         if (context.sessionID) {
           noteMine(context.sessionID);
-          await touchV2Presence(context.sessionID);
+          await ensureV2Presence(ctx, context.sessionID, context.agent);
         }
         const r = await executeMeshSend(
           { target: "all", text: args.text, broadcast: true, noReply: args.noReply, silent: args.silent },
@@ -297,10 +467,14 @@ export default Plugin.define({
       );
     }
 
-    // Presence hook: sessionID plus agent arrive on the V2 event; directory is
-    // absent by schema, so this stamps liveness only (never identity).
+    // Presence hook: sessionID plus agent arrive on the tool event; the
+    // ensurer stamps liveness and fills identity (never blocks the tool).
     await ctx.tool.hook("execute.before", (event) => {
-      void touchV2Presence(event.sessionID).then((v) => {
+      void ensureV2Presence(
+        ctx,
+        event.sessionID,
+        (event as { agent?: string }).agent,
+      ).then((v) => {
         if (event.sessionID) noteMine(event.sessionID);
         return v;
       });
@@ -351,9 +525,27 @@ export default Plugin.define({
     // entry predates this guard, so same-process V1+V2 claimer-config overlap
     // is a named gap (V1 always reconfigures); V2-only processes are exact.
     if (ownership.first) {
+      // Live inject handle for the claimer: user admission through the
+      // setup context reaches this server's sessions with no ports and no
+      // auth header, and renders the chat bubble like v1 (first setup owns
+      // it; same-process later setups share the server, so one handle
+      // covers the union).
+      v2ClaimClient = {
+        prompt: (input: {
+          sessionID: string;
+          text: string;
+          delivery: "steer" | "queue";
+        }) =>
+          ctx.session.prompt({
+            sessionID: input.sessionID as never,
+            text: input.text,
+            delivery: input.delivery,
+          }) as Promise<unknown>,
+      };
       configureClaimer({
         getOwnIds: () => v2OwnedIds(),
         getClient: () => null,
+        getV2Client: () => v2ClaimClient,
         getRegistry: async () =>
           (await readRegistry().catch(() => ({}))) as Record<
             string,
@@ -381,9 +573,11 @@ export default Plugin.define({
       const { last } = releaseV2Setup();
       removeV2Ids(mineIds);
       for (const id of mineIds) v2SeenAt.delete(id);
+      for (const id of mineIds) v2EnrichedAt.delete(id);
       if (last) {
         clearClaimerTimer();
         stopAttachPoller();
+        v2ClaimClient = null;
         try {
           await releaseClaimerOwner();
         } catch {}
