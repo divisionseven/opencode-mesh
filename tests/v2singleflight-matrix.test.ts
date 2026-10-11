@@ -8,6 +8,7 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import {
   acquireV2Setup,
+  armV2SharedTimer,
   mergeV2Ids,
   releaseV2Setup,
   removeV2Ids,
@@ -60,5 +61,24 @@ describe('v2 single-flight guard: first arms, rest merge, last tears down', () =
   it('release below zero clamps instead of going negative', () => {
     expect(releaseV2Setup()).toEqual({ last: true });
     expect(v2SetupCount()).toBe(0);
+  });
+
+  it('second arm is a no-op while a timer is held', () => {
+    let first = 0;
+    let second = 0;
+    armV2SharedTimer(() => {
+      first++;
+    });
+    armV2SharedTimer(() => {
+      second++;
+    });
+    expect(first).toBe(0);
+    expect(second).toBe(0);
+  });
+
+  it('reset with no timer held clears slots without throwing', () => {
+    resetV2Singleflight();
+    expect(v2SetupCount()).toBe(0);
+    expect(v2OwnedIds()).toEqual([]);
   });
 });
