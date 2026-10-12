@@ -106,9 +106,8 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 *Windows is currently untested. Please submit an issue to report its functionality.*
 
 > [!NOTE]
-> OpenCode-Mesh works with [OpenCode][link-opencode] >= 1.3.13. Both generations
-> use the single `opencode` binary. Tested on `1.18.35` and `2.0.26`.
-> Older hosts: file a GitHub issue.
+> OpenCode-Mesh now supports [OpenCode][link-opencode] v1 and v2 (>= 1.3.13). Both generations
+> use the same `opencode` binary. Last tested on `1.18.35` and `2.0.26`.
 
 ### Prerequisites:
 
@@ -142,7 +141,7 @@ node --version
 </details>
 
 <details>
-<summary><strong>OpenCode (>= 1.3.13)</strong></summary>
+<summary><strong>OpenCode >= 1.3.13 (v1 / v2 support)</strong></summary>
 
 **Install:**
 
@@ -477,7 +476,7 @@ and community contributions.
 ---
 
 <p align="center">
-  <strong>Last Updated: 2026-09-21</strong></br>
+  <strong>Last Updated: 2026-10-12</strong></br>
   <em><sub>OpenCode-Mesh is open-source and will remain free forever. If you find it valuable, please consider sponsoring its continued development and starring the repo to help others find it.</sub></em></br>
   <em><sub>— Division 7</em></sub></br></br>
   <a href="https://x.com/divsev"><img src="https://img.shields.io/badge/X-%40divsev-black?logo=x&logoColor=white&label=&color=0D0D0D" alt="X: @divsev"></a>
