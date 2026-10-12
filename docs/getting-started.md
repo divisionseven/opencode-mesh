@@ -241,7 +241,7 @@ A send is either admitted or queued. The receipt tells you which.
 
 | `via`      | Meaning                        | What happens next                     |
 | ---------- | ------------------------------ | ------------------------------------- |
-| `admitted` | Server took it -- 204 returned | Receiver processes immediately        |
+| `admitted` | Server took it -- 2xx returned (204 V1, 200 V2) | Receiver processes immediately        |
 | `queued`   | Outbox row created             | Claimer delivers when target is ready |
 
 `admitted` is not proof the reader saw it. It is proof the server accepted it.
@@ -259,7 +259,7 @@ Either session can track a delivery by receipt ID. Receipt lookup is available
 through the mesh tool interface (`mesh_peers` with the `receipt` parameter), not
 through the CLI.
 
-Receipt states: `queued` (waiting), `injected-progressing` (204 seen, reader
+Receipt states: `queued` (waiting), `injected-progressing` (2xx seen, reader
 unconfirmed), `dead-lettered` (exceeded max attempts), `failed-permanent` (row
 gone).
 
@@ -343,8 +343,8 @@ any message is sent. The flag must be the exact string `"1"`.
 
 ### Delivery mode
 
-Broadcast fans out with N sequential legs -- one `prompt_async` POST per peer,
-one at a time. Each peer gets its own receipt. `via` reads `admitted`,
+Broadcast fans out with N sequential legs -- one POST per peer,
+one at a time, V1 envelope or V2 admission per host. Each peer gets its own receipt. `via` reads `admitted`,
 `queued`, or `mixed` across legs. Registry-only fan out, caller excluded,
 DB-only rows excluded. Tool lowercases `all`, CLI match is case sensitive per
 facade normalize. At scale, prefer peer-to-peer sends over broadcast.
@@ -378,7 +378,7 @@ Status probes the single `OPENCODE_PORT` only; see [CLI status reference](cli.md
 MESH_ENUM_PORTS=4097,4098 npx opencode-mesh peers --json
 ```
 
-`MESH_ENUM_PORTS` lists extra loopback ports to probe, up to 8 with a 1-second timeout each. Today peers merge shared DB plus registry rows only; the extra-port union adds nothing to peers until wired. Status still probes the single `OPENCODE_PORT`; non-default servers surface in peers only through shared DB plus registry, with a `4096` fallback on the registry leg. Extra-port union probes only, not merged (planned for future release).
+`MESH_ENUM_PORTS` lists extra loopback ports to probe, up to 8 with a 1-second timeout each. Peers merge shared DB plus registry rows with the extra-port union of V1 status and V2 active views. Status still probes the single `OPENCODE_PORT`.
 
 ### State isolation
 
@@ -396,7 +396,7 @@ OPENCODE_MESH_ROOT=/tmp/mesh-test/nested npx opencode-mesh peers
 
 ### Stale peers
 
-Sessions register on start. A quiet sibling reads `stale` until the 24-hour prune. Unreachable status deletes nothing.
+Sessions register on start. A quiet sibling reads `stale` until the 24-hour prune. Unreachable status deletes nothing. After a server restart, live sessions rejoin within about one tick with no manual touch; queued rows deliver on return.
 
 ## Section 8: Authentication
 

@@ -54,7 +54,7 @@ If status shows skill as `not_shipped`, re-run `npx opencode-mesh install` (rewr
 
 **Symptom:** Send returns `admitted` but the target never acts on the message.
 
-**Cause:** `via: "admitted"` is a server 204 only, not proof the agent saw it. The target may be busy, the session may have closed, wake is suppressed, or the sender has no local serve host on the loopback (those sends take the claim path and read `queued`, never `admitted`): unresolvable receivers never POST, the send degrades to claim and the row defers for the claimer poller instead of admitting server-side, so a well-formed but unrecognized agent never reaches the wire.
+**Cause:** `via: "admitted"` is a server 2xx only (204 V1, 200 V2), not proof the agent saw it. The target may be busy, the session may have closed, wake is suppressed, or the sender has no local serve host on the loopback (those sends take the claim path and read `queued`, never `admitted`): unresolvable receivers never POST, the send degrades to claim and the row defers for the claimer poller instead of admitting server-side, so a well-formed but unrecognized agent never reaches the wire.
 
 **Fix:**
 
