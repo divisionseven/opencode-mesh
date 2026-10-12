@@ -51,6 +51,7 @@ import {
   v2OwnedIds,
 } from "../src/v2singleflight.js";
 import { v2ModelString } from "../src/v2routes.js";
+import { adoptDbSessions } from "../src/adopt.js";
 
 /** Stable V2 plugin id (also the status/diagnostics identity). */
 const MESH_V2_PLUGIN_ID = "opencode-mesh";
@@ -554,8 +555,21 @@ export default Plugin.define({
       });
       ensureClaimer();
       startAttachPoller();
+      // Restart adoption: the owned set dies with the server process while
+      // sessions survive in the database; adopt database-fresh ids now so
+      // queued rows have a claimant without any manual touch per session.
+      try {
+        const pass = await adoptDbSessions().catch(() => null);
+        if (pass) mergeV2Ids([...pass.adopted, ...pass.heartbeated]);
+      } catch {}
       armV2SharedTimer(() => {
         void (async () => {
+          // Periodic re-adopt bounds restart blindness to one tick: fresh
+          // database rows rejoin even when no event or tool ever fires.
+          try {
+            const pass = await adoptDbSessions().catch(() => null);
+            if (pass) mergeV2Ids([...pass.adopted, ...pass.heartbeated]);
+          } catch {}
           for (const sid of v2OwnedIds()) {
             try {
               await heartbeat(sid);

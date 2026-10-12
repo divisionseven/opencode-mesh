@@ -157,7 +157,9 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
   // claims): DB-only peers are sendable. Lazy import defers the sqlite edge
   // to call time, same pattern as mesh_peers (no static sqlite edge).
   const { joinAll } = await import("../discovery.js");
-  const { peers: unionPeers } = await joinAll();
+  // Send needs existence only; recency badges would full-scan message
+  // tables on every send, so the send union skips them.
+  const { peers: unionPeers } = await joinAll(undefined, { withRecency: false });
   const registryIds = new Set(Object.keys(reg));
   for (const [id, peer] of Object.entries(unionPeers)) {
     if (!(id in reg)) (reg as Record<string, unknown>)[id] = peer;

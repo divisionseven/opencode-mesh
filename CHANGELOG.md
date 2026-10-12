@@ -10,6 +10,22 @@ and this project adheres to
 
 ### Fixed
 
+- Fix 30-second tool calls on large databases by caching message recency
+  and skipping it on the send path (root cause: every send and peers call
+  full-scanned million-row message tables for display badges the send union
+  never uses; fix mechanism: 60-second recency cache plus a send union
+  without recency; gate: recency and skip tests green, full suite green)
+- Fix v2 sessions undiscoverable after a server restart by rebuilding live
+  ownership from database recency (root cause: v2 sessions share one server
+  process, so a restart empties the in-memory owned set while sessions stay
+  alive, leaving queued rows with no claimant until a manual touch; fix
+  mechanism: setup-time plus shared-tick adoption of sessions active inside
+  the activity window with a per-pass cap, reading both session and
+  session_v2 tables plus message and part recency, heartbeating known rows
+  and inserting missing ones without overwriting stored identity, safe
+  across servers because outbox claims are atomic; gate: v2adopt suite
+  failing before and green after, full suite green)
+
 - Fix v2 delivery queuing forever by adding v2 transport legs beside the
   unchanged v1 paths (root cause: the v2 adapter registered tools but every
   wire leg dialed v1-only routes that v2 servers never serve, so resolution
