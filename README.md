@@ -106,9 +106,8 @@ You can finally replace overcomplicated agent loops and endless prompting with s
 *Windows is currently untested. Please submit an issue to report its functionality.*
 
 > [!NOTE]
-> OpenCode-Mesh works with [OpenCode][link-opencode] >= 1.3.13. Both generations
-> use the single `opencode` binary. Tested on `1.18.35` and `2.0.26`.
-> Older hosts: file a GitHub issue.
+> OpenCode-Mesh now supports [OpenCode][link-opencode] v1 and v2 (>= 1.3.13). Both generations
+> use the same `opencode` binary. Last tested on `1.18.35` and `2.0.26`.
 
 ### Prerequisites:
 
@@ -142,7 +141,7 @@ node --version
 </details>
 
 <details>
-<summary><strong>OpenCode (>= 1.3.13)</strong></summary>
+<summary><strong>OpenCode >= 1.3.13 (v1 / v2 support)</strong></summary>
 
 **Install:**
 
@@ -280,12 +279,12 @@ Messages travel through four stages: discovery, routing, delivery, and cleanup. 
 
 Every peer carries exactly one freshness badge:
 
-| Badge | Meaning |
-| ----- | ------- |
-| `status` | Responding on the live probe right now |
-| `heartbeat-recent` | Heartbeat within the last 10 minutes |
-| `db-truth` | Exists in the database but no heartbeat |
-| `stale` | Older than 24 hours |
+| Badge              | Meaning                                 |
+| ------------------ | --------------------------------------- |
+| `status`           | Responding on the live probe right now  |
+| `heartbeat-recent` | Heartbeat within the last 10 minutes    |
+| `db-truth`         | Exists in the database but no heartbeat |
+| `stale`            | Older than 24 hours                     |
 
 Ranking orders the list as a decision tree: attached sessions first, then directory match, agent name, busy flag, and recency. It never hides rows. Pick rank 1 first: `status` means send now, `stale` means re-check first.
 
@@ -293,7 +292,7 @@ Ranking orders the list as a decision tree: attached sessions first, then direct
 
 When your agent calls `mesh_send`, the system resolves the target (exact session ID or singleton `agent@repo`), then probes the loopback port with a 1-second timeout. Session ID match is case-sensitive, `agent@repo` match is case-insensitive at exactly one row; misses fail with `PEER_NOT_FOUND` 404 and send nothing, see [CLI: send](docs/cli.md#send).
 
-- **Reachable** → direct path: POST the message straight to the target's `prompt_async` endpoint. The Runner starts immediately. Receipt: `via: "admitted"`.
+- **Reachable** → direct path: POST the message straight to the target. V1 posts to `prompt_async` and answers `204 No Content`; V2 posts `{text, delivery}` to `/api/session/:sessionID/prompt` and answers 2xx, usually `200` with a body. The Runner starts immediately. Receipt: `via: "admitted"`.
 - **Unreachable or busy** → claim path: insert a row into the SQLite outbox (WAL mode, crash-safe). The target's process will pick it up later. Receipt: `via: "queued"`.
 
 ### 3. Deliver
@@ -356,7 +355,9 @@ Both paths respect the wake setting: by default the receiving agent starts a Run
   └────────────────────────────────────────────┘
 ```
 
-> **Error Handling:** a busy target returns 429 immediately (caller-retryable). An unreachable target queues the message for later delivery. Outbox rows that exceed 25 delivery attempts are dead-lettered. Sessions that miss three heartbeat cycles are pruned. Every failure is auditable. See [Error Codes][docs-troubleshooting] and [Outbox Recovery][docs-transport].
+On V2 the direct box posts `{text, delivery}` to `/api/session/:sessionID/prompt` and admits on any 2xx, usually `200` with a body. Claim injection uses user admission on both generations.
+
+> **Error Handling:** a busy target returns 429 immediately (caller-retryable). An unreachable target queues the message for later delivery. Outbox rows that exceed 25 delivery attempts are dead-lettered. Stale registry rows prune after 24 hours without a heartbeat; status-confirmed dead ids evict past grace. Every failure is auditable. See [Error Codes][docs-troubleshooting] and [Outbox Recovery][docs-transport].
 
 ## Configuration
 
@@ -376,13 +377,13 @@ All `MeshError` codes are documented in [Error Codes][error-codes]. Receipt sche
 
 Every message travels over loopback (`127.0.0.1`). The transport path depends on whether the target is reachable and whether you're sending to one session or many. See [How It Works](#how-it-works) for the full routing and delivery explanation.
 
-| Path           | Transport                                     | Topology                  | Wake                               | Receipt               | When                            |
-| -------------- | --------------------------------------------- | ------------------------- | ---------------------------------- | --------------------- | ------------------------------- |
-| Direct send    | `prompt_async` → 204                          | loopback `127.0.0.1:4096` | wake-default; `silent` per message | `admitted`            | target reachable                |
-| Queued send    | outbox row + claimer delivery                 | loopback, same root       | wake-default; `silent` per row bit | `queued` → receipt id | target busy or server down      |
-| Broadcast      | sequential `prompt_async` legs, one at a time | loopback fan-out          | wake-default; `silent` per message | per-peer ok/failed    | `MESH_BROADCAST=1` only         |
-| Silent deposit | same legs, `noReply` wire key                 | loopback                  | history-only `(SILENT)` marker     | `admitted`/`queued`   | `silent: true` or `MESH_WAKE=0` |
-| Multi-instance | port enumeration + single-port live-join      | loopback, sibling ports   | as the leg                         | as the leg            | `MESH_ENUM_PORTS` set           |
+| Path           | Transport                                             | Topology                       | Wake                               | Receipt               | When                            |
+| -------------- | ----------------------------------------------------- | ------------------------------ | ---------------------------------- | --------------------- | ------------------------------- |
+| Direct send    | V1 `prompt_async` → 204; V2 `/api prompt` → 2xx       | loopback pin plus probed ports | wake-default; `silent` per message | `admitted`            | target reachable                |
+| Queued send    | outbox row + claimer delivery                         | loopback, same root            | wake-default; `silent` per row bit | `queued` → receipt id | target busy or server down      |
+| Broadcast      | sequential legs, V1 envelope or V2 admission per host | loopback fan-out               | wake-default; `silent` per message | per-peer ok/failed    | `MESH_BROADCAST=1` only         |
+| Silent deposit | same legs, `noReply` wire key                         | loopback                       | history-only `(SILENT)` marker     | `admitted`/`queued`   | `silent: true` or `MESH_WAKE=0` |
+| Multi-instance | port enumeration + single-port live-join              | loopback, sibling ports        | as the leg                         | as the leg            | `MESH_ENUM_PORTS` set           |
 
 [See Full Multi-Instance Guide →][multi-instance-guide]
 
@@ -390,10 +391,11 @@ Every message travels over loopback (`127.0.0.1`). The transport path depends on
 
 > A habit adopted from our [PKG-Defender][pkg-defender] project, each dependency includes a pre-crafted audit link for supply chain scrutiny. Click through before installing in sensitive environments.
 
-| Package                           | Purpose                                                                            | Audit Link                 |
-| --------------------------------- | ---------------------------------------------------------------------------------- | -------------------------- |
-| [@opencode-ai/plugin][dep-plugin] | Host plugin contract: tool registration, session lifecycle hooks, client injection | [AUDIT ME →][audit-plugin] |
-| [@opencode-ai/sdk][dep-sdk]       | Typed client behind promptAsync delivery and session reads                         | [AUDIT ME →][audit-sdk]    |
+| Package                           | Purpose                                                                            | Audit Link                    |
+| --------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------- |
+| [@opencode-ai/plugin][dep-plugin] | Host plugin contract: tool registration, session lifecycle hooks, client injection | [AUDIT ME →][audit-plugin]    |
+| [@opencode-ai/sdk][dep-sdk]       | Typed client behind promptAsync delivery and session reads                         | [AUDIT ME →][audit-sdk]       |
+| [@opencode/plugin][dep-plugin-v2] | V2 plugin contract: transforms, hooks, session and event domains                   | [AUDIT ME →][audit-plugin-v2] |
 
 Lockfile `package-lock.json` ships at root, ranges stay caret (no pins) so compatible host upgrades work. Dev-only `typescript`, `vitest`, `tsx`, `@types/node` never reach the tarball (`package.json` `files`: `dist`, `LICENSE`, `README.md`, `CHANGELOG.md`, `skills`).
 
@@ -450,7 +452,7 @@ Small surface, strict gates: fork, branch, Conventional Commits, paste verificat
 ## Current Limitations (Initial Public Release)
 
 - **Same machine only.** Every leg is loopback `127.0.0.1` (`src/tools/mesh_send.ts`), there is no remote transport and none planned. "Machine" means any one host, not Apple hardware: Linux and macOS are supported, Windows is untested.
-- **Admitted is not seen.** `via: "admitted"` is a server 204, never proof the reader saw it, confirm through the receiver's conversation.
+- **Admitted is not seen.** `via: "admitted"` is a server 2xx (204 V1, 200 V2), never proof the reader saw it, confirm through the receiver's conversation.
 - **Queued rows expire.** Outbox TTL is 10m with 25 attempts and a 100-deep per-target cap (`src/constants.ts`), rows past TTL dead-letter with audit, re-send after `failed-permanent` or `dead-lettered`.
 - **Expiry is idle-based.** Subagents 30m, primaries 48h, registry prune 24h (`src/constants.ts`, `src/expiry.ts`), a quiet-but-alive session can read expired, heartbeat every 5m prevents that while running.
 
@@ -477,7 +479,7 @@ and community contributions.
 ---
 
 <p align="center">
-  <strong>Last Updated: 2026-09-21</strong></br>
+  <strong>Last Updated: 2026-10-12</strong></br>
   <em><sub>OpenCode-Mesh is open-source and will remain free forever. If you find it valuable, please consider sponsoring its continued development and starring the repo to help others find it.</sub></em></br>
   <em><sub>— Division 7</em></sub></br></br>
   <a href="https://x.com/divsev"><img src="https://img.shields.io/badge/X-%40divsev-black?logo=x&logoColor=white&label=&color=0D0D0D" alt="X: @divsev"></a>
@@ -531,11 +533,13 @@ and community contributions.
 [npm-dep-graph]: https://npmgraph.js.org/?q=opencode-mesh
 [dep-plugin]: https://www.npmjs.com/package/@opencode-ai/plugin
 [dep-sdk]: https://www.npmjs.com/package/@opencode-ai/sdk
+[dep-plugin-v2]: https://www.npmjs.com/package/@opencode/plugin
 
 <!-- Dependencies: Audit Dorking Links -->
 
 [audit-plugin]: https://www.google.com/search?q=%40opencode-ai%2Fplugin+%28%22supply+chain+attack%22+OR+%22account+takeover%22+OR+compromised+OR+%22malicious+package%22+OR+backdoor+OR+typosquat%29+-site%3Astackoverflow.com&tbs=qdr%3Ay
 [audit-sdk]: https://www.google.com/search?q=%40opencode-ai%2Fsdk+%28%22supply+chain+attack%22+OR+%22account+takeover%22+OR+compromised+OR+%22malicious+package%22+OR+backdoor+OR+typosquat%29+-site%3Astackoverflow.com&tbs=qdr%3Ay
+[audit-plugin-v2]: https://www.google.com/search?q=%40opencode%2Fplugin+%28%22supply+chain+attack%22+OR+%22account+takeover%22+OR+compromised+OR+%22malicious+package%22+OR+backdoor+OR+typosquat%29+-site%3Astackoverflow.com&tbs=qdr%3Ay
 
 <!-- Internal Documentation Links -->
 
@@ -562,7 +566,6 @@ and community contributions.
 [divisionseven-gh]: https://github.com/divisionseven
 [gh-new-security-vuln]: https://github.com/divisionseven/opencode-mesh/security/advisories/new
 [opencode-repo]: https://github.com/anomalyco/opencode
-[opencode-v2-docs]: https://opencode.ai/v2/docs
 [unified-kanban-repo]: https://github.com/divisionseven/unified-kanban
 [pkg-defender]: https://github.com/divisionseven/pkg-defender
 [error-codes]: docs/troubleshooting.md

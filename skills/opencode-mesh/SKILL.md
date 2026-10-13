@@ -144,6 +144,24 @@ Linux; `USER` sanitized to safe chars, miss sends no header. Default user reads 
 overrides username only. Keep pasted transcripts under `/tmp` roots free of
 passwords, tokens, registry dumps.
 
+## V2 notes
+
+V1 sections above apply unchanged; tool shapes, workflow, receipts, and
+limits are identical. Only the wire underneath differs.
+
+- Delivery posts `{text, delivery}` to `/api/session/:sessionID/prompt`
+  instead of the V1 `prompt_async` envelope. Prefix text, bubbles, and the
+  steer on wake versus queue on silent mapping behave the same.
+- The loopback pin `127.0.0.1:4096` is the default only. V2 servers listen
+  on their own ports, probed in order; set `MESH_ENUM_PORTS` to override.
+- `attached` stays `ps`-detected. Serve-hosted sessions never attach; they
+  read live through status and database truth instead.
+- `via:admitted` means any 2xx. V1 answers 204 with no body, V2 answers
+  200 with a body.
+- After a server restart, live sessions rejoin within about one tick and
+  queued rows deliver with no manual touch. Wait and re-check peers rather
+  than re-registering by hand.
+
 ## Full docs
 
 - Install:

@@ -54,7 +54,7 @@ Both `<target>` and `<text...>` are required; `<text...>` joins every non-flag w
 opencode-mesh send ses_abc123 "hello from the CLI"
 # Receipt: { "ok": true, "via": "admitted", "target": "ses_abc123", ... }
 # Singleton `agent@repo` resolves only at exactly one match; two matches miss with `PEER_NOT_FOUND` 404.
-# CLI has no receipt lookup. Confirm `admitted` (204, server accepted, reader unconfirmed) through the receiver's conversation, or track `queued` rows by `id` via the tool interface `mesh_peers({ receipt: "msg_…" })`. See [Delivery Receipts](transport.md#delivery-receipts).
+# CLI has no receipt lookup. Confirm `admitted` (2xx, server accepted, reader unconfirmed) through the receiver's conversation, or track `queued` rows by `id` via the tool interface `mesh_peers({ receipt: "msg_…" })`. See [Delivery Receipts](transport.md#delivery-receipts).
 
 opencode-mesh send all "broadcast message"
 # Requires MESH_BROADCAST=1; sends to every peer (zero sends without it, exit 1)

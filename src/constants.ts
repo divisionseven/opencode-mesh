@@ -32,6 +32,8 @@ export const OUTBOX_VACUUM_MIN_PAGES = 16;
 export const MSG_ID_PREFIX = "msg_";
 export const MSG_ID_HEX_LEN = 12;
 export const MSG_ID_B62_LEN = 14;
+/** Recency cache TTL: bounds full-table message scans to one per window. */
+export const RECENCY_TTL_MS = 60 * 1000;
 /** Subagent TTL: idle subagents past this meet the expired predicate. */
 export const SUBAGENT_TTL_MS = 30 * 60 * 1000;
 /** Primary TTL: idle primaries inside this read sleeper and stay. */

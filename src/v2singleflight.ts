@@ -95,3 +95,22 @@ export function resetV2Singleflight(): void {
   s.setups = 0;
   s.ids.clear();
 }
+
+/**
+ * One shared tick: adopt database-fresh sessions so restarts re-own live
+ * rows, then heartbeat the union. Never throws; setup arms it, tests drive
+ * it directly with no timers involved.
+ */
+export async function runV2SharedTick(): Promise<void> {
+  try {
+    const { adoptDbSessions } = await import("./adopt.js");
+    const pass = await adoptDbSessions().catch(() => null);
+    if (pass) mergeV2Ids([...pass.adopted, ...pass.heartbeated]);
+  } catch {}
+  for (const sid of v2OwnedIds()) {
+    try {
+      const { heartbeat } = await import("./registry.js");
+      await heartbeat(sid);
+    } catch {}
+  }
+}

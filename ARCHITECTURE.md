@@ -3,10 +3,10 @@
 > Newcomer map into [Architecture](docs/architecture.md)
 
 OpenCode-Mesh is a same-machine loopback mesh that lets OpenCode
-sessions message each other. Sends go direct over `prompt_async` when
-the target's server answers, or queue in a local outbox for the
-target's claimer to inject. Peers display as a never-hides union of
-database truth, registry freshness, and live status.
+sessions message each other. Sends go direct when the target's server
+answers (V1 `prompt_async` for a 204, V2 user admission for a 2xx), or
+queue in a local outbox for the target's claimer to inject. Peers display
+as a never-hides union of database truth, registry freshness, and live status.
 
 ## Map
 
@@ -20,7 +20,7 @@ flowchart TB
     C[CLI via router]
     S[opencode serve 4096]
   end
-  P -->|prompt_async 204| S
+  P -->|prompt_async 204, api prompt 2xx| S
   C -->|direct 204 else outbox queued| S
   C -->|enqueue + claim| O
   P -->|claim own rows| O
@@ -34,7 +34,7 @@ flowchart TB
 
 - Registry holds one `RegistryEntry` per session, written only via `atomicUpdateRegistry` under
   `withRegistryLock`; `agent` reads `unknown`, never NULL. See [schema.md](docs/schema.md) and [How storage persists](docs/architecture.md#how-storage-persists).
-- The send path brands each body as `PromptInput` and admits direct on 204 with no inline send-path sleep.
+- The send path brands each body as `PromptInput` and admits direct on 2xx (204 V1, 200 V2) with no inline send-path sleep.
   Waits live only in the claimer queue policy in the 550-650ms band; broadcast aggregates read `"mixed"` when legs differ. See [transport.md](docs/transport.md) and [How sends flow](docs/architecture.md#how-sends-work).
 - `mesh_peers` shows the never-hides union with one `liveSource` badge per id. See
   [How discovery displays](docs/architecture.md#how-discovery-works) and [CONTEXT.md](CONTEXT.md).

@@ -17,7 +17,7 @@ All mesh behavior is driven by environment variables. No config files, no YAML, 
 
 | Variable        | Default | Description                                                                                                                                                                                                                    |
 | --------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `OPENCODE_PORT` | `4096`  | OpenCode server loopback port. Status probes and `prompt_async` delivery both target this port. Single constant `4096`; `status` reports `source: env` when set, `default` otherwise. The port dials only; the server owns it. |
+| `OPENCODE_PORT` | `4096`  | OpenCode server loopback port. Status probes and delivery start here; V2 legs continue across probed ports with V2 routes. Single constant `4096`; `status` reports `source: env` when set, `default` otherwise. The port dials only; the server owns it. |
 
 ### Delivery Behavior
 
@@ -41,7 +41,7 @@ The table below lists the idle TTL knobs and their defaults. Registry deletes ru
 
 | Variable                | Default                               | Description                                                                                                                                                                                                                                                                                               |
 | ----------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MESH_ENUM_PORTS`       | unset                                 | Comma-separated list of extra loopback ports to probe for sibling OpenCode instances. Each probe gets a 1-second timeout. Max 8 ports. Today the extra-port union adds nothing to peers; peers merge shared DB plus registry only. Extra-port union probes only, not merged (planned for future release). |
+| `MESH_ENUM_PORTS`       | unset                                 | Comma-separated list of extra loopback ports to probe for sibling OpenCode instances. Each probe gets a 1-second timeout. Max 8 ports. Peers merge the extra-port union of V1 status and V2 active views. |
 | `OPENCODE_MESH_DB_PATH` | `~/.local/share/opencode/opencode.db` | Explicit path to the OpenCode discovery database. Used by `mesh_peers` for DB-grounded session existence.                                                                                                                                                                                                 |
 
 ### Authentication
