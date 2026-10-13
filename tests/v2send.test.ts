@@ -217,6 +217,77 @@ describe('v2 send legs', () => {
     restore();
   });
 
+describe('v2 prompt status mapping', () => {
+  async function sendWithPromptStatus(status: number | 'throw') {
+    const { root, restore } = await freshRoot('v2send-status-');
+    process.env.MESH_ENUM_PORTS = '4501';
+    await seedPeer('v2-peer', { agent: 'alfred' });
+    globalThis.fetch = (async (url: unknown) => {
+      const u = String(url);
+      if (u === 'http://127.0.0.1:4501/api/session/active') {
+        return jsonResponse({ data: { 'v2-peer': { type: 'running' } } });
+      }
+      if (u === 'http://127.0.0.1:4501/api/session/v2-peer') {
+        return jsonResponse({
+          data: {
+            id: 'v2-peer',
+            agent: 'alfred',
+            model: { providerID: 'p', id: 'm' },
+          },
+        });
+      }
+      if (u === 'http://127.0.0.1:4501/api/session/v2-peer/prompt') {
+        if (status === 'throw') throw new Error('reset');
+        return new Response('miss', { status: status as number });
+      }
+      return new Response('down', { status: 404 });
+    }) as unknown as typeof fetch;
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    try {
+      const out = JSON.parse(
+        String(
+          (
+            await (mesh_send.execute as any)(
+              { target: 'v2-peer', text: 'hello' },
+              { sessionID: 'v2-caller', agent: 'manager' },
+            )
+          ).output,
+        ),
+      ) as { via: string };
+      return { outcome: 'resolved' as const, via: out.via };
+    } catch (err) {
+      return {
+        outcome: 'rejected' as const,
+        code: (err as { code?: string }).code,
+      };
+    } finally {
+      delete process.env.MESH_ENUM_PORTS;
+      await safeRm(root);
+      restore();
+    }
+  }
+
+  it('busy retries queue instead of surfacing', async () => {
+    const r = await sendWithPromptStatus(429);
+    expect(r).toEqual({ outcome: 'resolved', via: 'queued' });
+  });
+
+  it('auth mismatch stays loud', async () => {
+    const r = await sendWithPromptStatus(401);
+    expect(r).toEqual({ outcome: 'rejected', code: 'UNAUTHORIZED' });
+  });
+
+  it('oversize stays loud', async () => {
+    const r = await sendWithPromptStatus(413);
+    expect(r).toEqual({ outcome: 'rejected', code: 'PAYLOAD_TOO_LARGE' });
+  });
+
+  it('transport faults degrade to queue', async () => {
+    const r = await sendWithPromptStatus('throw');
+    expect(r).toEqual({ outcome: 'resolved', via: 'queued' });
+  });
+});
+
   it('v1 admit never touches v2 paths', async () => {
     const { root, restore } = await freshRoot('v2send-v1-');
     await seedPeer('v2-peer', { agent: 'alfred', model: 'acme/reasoner' });

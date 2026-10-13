@@ -28,6 +28,17 @@ vi.mock('../src/attach.js', () => ({
   getAttachSnapshot: vi.fn(() => null),
 }));
 
+vi.mock('../src/v2routes.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../src/v2routes.js')>();
+  return {
+    ...actual,
+    activeUnion: async () => {
+      throw new Error('union down');
+    },
+  };
+});
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -236,6 +247,23 @@ describe('restart adoption', () => {
     await safeRm(root);
     restore();
   });
+
+  it('foreign-shaped database adopts nothing without throwing', async () => {
+    const { root, restore } = await freshRoot('v2adopt-foreign-');
+    const dbPath = join(root, 'live.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec('CREATE TABLE other(x TEXT)');
+    db.close();
+    const unpoint = pointDb(dbPath);
+    await expect(adoptDbSessions()).resolves.toEqual({
+      adopted: [],
+      heartbeated: [],
+      skipped: 0,
+    });
+    unpoint();
+    await safeRm(root);
+    restore();
+  });
 });
 
 describe('v2 table union', () => {
@@ -266,6 +294,34 @@ describe('v2 table union', () => {
     restore();
   });
 
+  it('sparse rows adopt with safe fallbacks', async () => {
+    const { root, restore } = await freshRoot('v2adopt-sparse-');
+    const dbPath = join(root, 'live.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(
+      'CREATE TABLE session_v2(id TEXT PRIMARY KEY, agent TEXT, directory TEXT, title TEXT, time_updated INTEGER, parent_id TEXT)',
+    );
+    db.prepare('INSERT INTO session_v2 VALUES(?,?,?,?,?,?)').run(
+      'ses-sparse',
+      null,
+      null,
+      null,
+      Date.now(),
+      null,
+    );
+    db.close();
+    const unpoint = pointDb(dbPath);
+    const pass = await adoptDbSessions();
+    expect(pass.adopted).toEqual(['ses-sparse']);
+    const row = (await readEntry('ses-sparse')) as Record<string, unknown>;
+    expect(row.agent).toBe('unknown');
+    expect(row.sessionType).toBe('primary');
+    expect(row.title).toBe('ses-spar');
+    unpoint();
+    await safeRm(root);
+    restore();
+  });
+
   it('triple resolves from session_v2 with a JSON model cell', async () => {
     const { root, restore } = await freshRoot('v2adopt-v2triple-');
     const dbPath = join(root, 'live.db');
@@ -290,6 +346,16 @@ describe('v2 table union', () => {
       },
     });
     unpoint();
+    await safeRm(root);
+    restore();
+  });
+
+  it('union failure degrades tcp status to null without throwing', async () => {
+    const { root, restore } = await freshRoot('v2adopt-tcpfail-');
+    globalThis.fetch = (async () =>
+      new Response('down', { status: 404 })) as unknown as typeof fetch;
+    const { readTcpStatus } = await import('../src/discovery.js');
+    await expect(readTcpStatus()).resolves.toBeNull();
     await safeRm(root);
     restore();
   });

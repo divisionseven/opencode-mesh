@@ -36,13 +36,7 @@ export async function adoptDbSessions(opts?: {
 }): Promise<AdoptPass> {
   const now = opts?.now ?? Date.now();
   const limit = opts?.limit ?? ADOPT_MAX_IDS;
-  const empty: AdoptPass = { adopted: [], heartbeated: [], skipped: 0 };
-  let rows;
-  try {
-    rows = await readDbSessions(opts?.dbPath);
-  } catch {
-    return empty;
-  }
+  const rows = await readDbSessions(opts?.dbPath);
   const fresh = Object.values(rows)
     .filter((r) => now - r.dbUpdatedAt <= ADOPT_WINDOW_MS)
     .sort((a, b) => b.dbUpdatedAt - a.dbUpdatedAt);

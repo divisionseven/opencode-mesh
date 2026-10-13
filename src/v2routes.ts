@@ -78,26 +78,12 @@ export async function activeUnion(
   const withV1 = opts?.v1 ?? true;
   const merged: Record<string, { type: string }> = {};
   for (const port of portsToProbe(ports)) {
-    let view: Record<string, { type: string }> | null = null;
-    if (withV1) {
-      try {
-        view = await fetchSessionStatusMap(port);
-      } catch {
-        view = null;
-      }
-    }
-    if (!view) view = await fetchV2Active(port, viaAuth);
+    const view =
+      (withV1 ? await fetchSessionStatusMap(port) : null) ??
+      (await fetchV2Active(port, viaAuth));
     if (view) for (const [id, st] of Object.entries(view)) merged[id] ??= st;
   }
   return Object.keys(merged).length > 0 ? merged : null;
-}
-
-/** True when any probed port answers v1 status or v2 active. */
-export async function routeIsDirect(
-  ports?: number[],
-  auth?: string,
-): Promise<boolean> {
-  return (await activeUnion(ports, auth)) !== null;
 }
 
 /** One v2 session row; null on miss or unparseable body. */

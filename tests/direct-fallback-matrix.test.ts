@@ -135,3 +135,88 @@ describe('clientless direct fallback', () => {
     await safeRm(root); restore();
   });
 });
+
+describe('clientless v2 prompt fallback', () => {
+  function stubV2Prompt(
+    posts: Array<{ url: string; body: Record<string, unknown> }>,
+    promptStatus: number,
+  ) {
+    return (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/session/status')) {
+        return { ok: true, status: 200 } as unknown as Response;
+      }
+      if (u.includes('prompt_async')) {
+        return { ok: false, status: 500 } as unknown as Response;
+      }
+      if (u.includes('/api/session/ses-T') && !u.includes('/prompt')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            agent: 'beta',
+            model: { providerID: 'p', id: 'm' },
+          }),
+        } as unknown as Response;
+      }
+      if (u.includes('/api/session/ses-T/prompt')) {
+        posts.push({
+          url: u,
+          body: JSON.parse(String((init as { body?: string })?.body ?? '{}')),
+        });
+        if (promptStatus === 200) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ id: 'inbox_1' }),
+          } as unknown as Response;
+        }
+        return { ok: false, status: promptStatus } as unknown as Response;
+      }
+      return { ok: false, status: 404 } as unknown as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  it('v1 miss plus v2 prompt posts the prefixed body and acks', async () => {
+    const { root, restore } = await freshRoot('mesh-v2fb-');
+    await (await import('node:fs/promises')).mkdir(join(root, 'audit.log'));
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = stubV2Prompt(posts, 200);
+    await ob.enqueue({ target_session: 'ses-T', from_session: 'ses-F', from_agent: 'a', text: 'hi' }, root);
+    cl.configureClaimer({
+      getOwnIds: () => ['ses-T'],
+      getClient: () => ({ session: {} }),
+      getRegistry: async () => ({ 'ses-T': { agent: 'beta', model: 'p/m' } }),
+    });
+    await cl.pollClaimer();
+    expect(posts).toHaveLength(1);
+    expect(posts[0].url).toContain('/api/session/ses-T/prompt');
+    expect(posts[0].body['delivery']).toBe('steer');
+    expect(String(posts[0].body['text'])).toContain('hi');
+    expect(String(posts[0].body['text'])).toContain('ses-F');
+    expect(await ob.pendingCount(['ses-T'], root)).toBe(0);
+    cl.clearClaimerTimer();
+    await cl.releaseClaimerOwner();
+    await safeRm(root); restore();
+  });
+
+  it('v2 prompt 404 terminalizes with the direct reason', async () => {
+    const { root, restore } = await freshRoot('mesh-v2fb-404-');
+    await (await import('node:fs/promises')).mkdir(join(root, 'audit.log'));
+    const posts: Array<{ url: string; body: Record<string, unknown> }> = [];
+    globalThis.fetch = stubV2Prompt(posts, 404);
+    const id = await ob.enqueue({ target_session: 'ses-T', from_session: 'ses-F', from_agent: 'a', text: 'hi' }, root);
+    cl.configureClaimer({
+      getOwnIds: () => ['ses-T'],
+      getClient: () => ({ session: {} }),
+      getRegistry: async () => ({ 'ses-T': { agent: 'beta', model: 'p/m' } }),
+    });
+    await cl.pollClaimer();
+    expect(posts).toHaveLength(1);
+    const r = await ob.receiptById(id, root);
+    expect(r.state).toBe('failed-permanent');
+    cl.clearClaimerTimer();
+    await cl.releaseClaimerOwner();
+    await safeRm(root); restore();
+  });
+});

@@ -172,6 +172,17 @@ describe('active union merges v1 status with v2 active views', () => {
     }) as typeof fetch;
     await expect(activeUnion([4096], undefined)).resolves.toBeNull();
   });
+
+  it('alive-but-empty servers read null without deleting anything', async () => {
+    globalThis.fetch = (async (url: unknown) => {
+      const u = String(url);
+      if (u.includes('/session/status')) {
+        return new Response('down', { status: 404 });
+      }
+      return jsonResponse({ data: {} });
+    }) as typeof fetch;
+    await expect(activeUnion([4107], undefined)).resolves.toBeNull();
+  });
 });
 
 describe('v2 row helpers normalize SessionInfo to wire triples', () => {
@@ -195,5 +206,101 @@ describe('v2 row helpers normalize SessionInfo to wire triples', () => {
 
   it('default port probing honors the probe list', () => {
     expect(portsToProbe([4107])).toEqual([4107]);
+    expect(portsToProbe([])).toEqual([4096]);
+  });
+
+  it('garbage probe env falls back to the default pin', async () => {
+    process.env.MESH_ENUM_PORTS = 'abc';
+    const dialed: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      dialed.push(String(url));
+      return new Response('down', { status: 404 });
+    }) as typeof fetch;
+    try {
+      await expect(activeUnion(undefined, undefined)).resolves.toBeNull();
+      expect(dialed).toEqual([
+        'http://127.0.0.1:4096/session/status',
+        'http://127.0.0.1:4096/api/session/active',
+      ]);
+    } finally {
+      delete process.env.MESH_ENUM_PORTS;
+    }
+  });
+});
+
+describe('v2 union failure modes', () => {
+  it('throwing v1 leg still fills from v2 active', async () => {
+    globalThis.fetch = (async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith('/session/status')) throw new Error('reset');
+      return jsonResponse({ data: { ses_v2: { type: 'running' } } });
+    }) as typeof fetch;
+    await expect(activeUnion([4107], undefined)).resolves.toEqual({
+      ses_v2: { type: 'running' },
+    });
+  });
+
+  it('bare session rows pass through without a data envelope', async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse({ id: 'ses_b', agent: 'a' })) as typeof fetch;
+    await expect(fetchV2Session(4107, 'ses_b', undefined)).resolves.toEqual({
+      id: 'ses_b',
+      agent: 'a',
+    });
+  });
+
+  it('scalar bodies read null instead of throwing', async () => {
+    globalThis.fetch = (async () =>
+      jsonResponse('bare')) as typeof fetch;
+    await expect(fetchV2Session(4107, 'ses_b', undefined)).resolves.toBeNull();
+  });
+});
+
+describe('v2 auth and merge precedence', () => {
+  it('configured passwords ride every leg as one header', async () => {
+    const seen: Array<{ url: string; auth: unknown }> = [];
+    globalThis.fetch = (async (url: unknown, init?: unknown) => {
+      seen.push({
+        url: String(url),
+        auth: (init as { headers?: Record<string, string> })?.headers?.[
+          'Authorization'
+        ],
+      });
+      if (String(url).endsWith('/api/session/active')) {
+        return jsonResponse({ data: {} });
+      }
+      return jsonResponse({ id: 'x' });
+    }) as typeof fetch;
+    await fetchV2Active(4107, 'Basic abc');
+    await postV2Prompt(4107, 'ses_a', 'hi', undefined, 'Basic abc');
+    expect(seen).toHaveLength(2);
+    for (const call of seen) expect(call.auth).toBe('Basic abc');
+  });
+
+  it('first port wins shared ids across the union', async () => {
+    globalThis.fetch = (async (url: unknown) => {
+      const u = String(url);
+      if (u.startsWith('http://127.0.0.1:4107')) {
+        return jsonResponse({ ses_dup: { type: 'idle' } });
+      }
+      if (u.startsWith('http://127.0.0.1:4108')) {
+        return jsonResponse({ ses_dup: { type: 'busy' } });
+      }
+      return new Response('down', { status: 404 });
+    }) as typeof fetch;
+    await expect(activeUnion([4107, 4108], undefined)).resolves.toEqual({
+      ses_dup: { type: 'idle' },
+    });
+  });
+
+  it('bare json admits without an inbox id', async () => {
+    globalThis.fetch = (async () =>
+      new Response('"bare"', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+    await expect(
+      postV2Prompt(4107, 'ses_a', 'hi', undefined, undefined),
+    ).resolves.toEqual({ ok: true });
   });
 });
