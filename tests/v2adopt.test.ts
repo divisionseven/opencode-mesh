@@ -527,3 +527,117 @@ describe('setup adoption joins the owned union', () => {
     restore();
   });
 });
+
+ describe('shared tick adopts without timers', () => {
+  it('one tick owns database-fresh ids and stamps them', async () => {
+    const { root, restore } = await freshRoot('v2adopt-tick-');
+    const dbPath = join(root, 'live.db');
+    seedDb(dbPath, [
+      {
+        id: 'ses-tick',
+        agent: 'alfred',
+        directory: '/tmp/tick',
+        title: 'Tick work',
+        updated: Date.now(),
+      },
+    ]);
+    const unpoint = pointDb(dbPath);
+    const {
+      resetV2Singleflight,
+      runV2SharedTick,
+      v2OwnedIds,
+    } = await import('../src/v2singleflight.js');
+    resetV2Singleflight();
+    await runV2SharedTick();
+    expect(v2OwnedIds()).toContain('ses-tick');
+    const row = (await readEntry('ses-tick')) as Record<string, unknown>;
+    expect(row.agent).toBe('alfred');
+    resetV2Singleflight();
+    unpoint();
+    await safeRm(root);
+    restore();
+  });
+});
+
+describe('database union precedence', () => {
+  it('shared ids keep the fresher write across tables', async () => {
+    const { root, restore } = await freshRoot('v2adopt-collide-');
+    const dbPath = join(root, 'live.db');
+    const db = new DatabaseSync(dbPath);
+    const now = Date.now();
+    db.exec(
+      'CREATE TABLE session(id TEXT PRIMARY KEY, agent TEXT, directory TEXT, title TEXT, time_updated INTEGER, parent_id TEXT)',
+    );
+    db.exec(
+      'CREATE TABLE session_v2(id TEXT PRIMARY KEY, agent TEXT, directory TEXT, title TEXT, time_updated INTEGER, parent_id TEXT)',
+    );
+    db.prepare('INSERT INTO session VALUES(?,?,?,?,?,?)').run(
+      'ses-both',
+      'stale-agent',
+      null,
+      null,
+      now - 60_000,
+      null,
+    );
+    db.prepare('INSERT INTO session_v2 VALUES(?,?,?,?,?,?)').run(
+      'ses-both',
+      'fresh-agent',
+      '/tmp/fresh',
+      null,
+      now,
+      null,
+    );
+    db.close();
+    const unpoint = pointDb(dbPath);
+    const { readDbSessions } = await import('../src/discovery.js');
+    try {
+      const map = await readDbSessions();
+      expect(map['ses-both']?.agent).toBe('fresh-agent');
+      expect(map['ses-both']?.directory).toBe('/tmp/fresh');
+    } finally {
+      unpoint();
+      await safeRm(root);
+      restore();
+    }
+  });
+
+  it('older message duplicates never move recency backward', async () => {
+    const { root, restore } = await freshRoot('v2adopt-recency-old-');
+    const dbPath = join(root, 'live.db');
+    const db = new DatabaseSync(dbPath);
+    db.exec(
+      'CREATE TABLE part(id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)',
+    );
+    const now = Date.now();
+    db.prepare('INSERT INTO part VALUES(?,?,?,?,?,?)').run(
+      'part-new',
+      'msg-1',
+      'ses-dup',
+      now,
+      now,
+      '{}',
+    );
+    db.prepare('INSERT INTO part VALUES(?,?,?,?,?,?)').run(
+      'part-old',
+      'msg-2',
+      'ses-dup',
+      now - 60_000,
+      now - 60_000,
+      '{}',
+    );
+    db.close();
+    const unpoint = pointDb(dbPath);
+    const { clearRecencyCache, readMessageRecency } = await import(
+      '../src/discovery.js'
+    );
+    clearRecencyCache();
+    try {
+      expect((await readMessageRecency())['ses-dup']).toBe(now);
+    } finally {
+      clearRecencyCache();
+      unpoint();
+      await safeRm(root);
+      restore();
+    }
+  });
+});

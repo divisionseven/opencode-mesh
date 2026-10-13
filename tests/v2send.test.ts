@@ -286,6 +286,96 @@ describe('v2 prompt status mapping', () => {
     const r = await sendWithPromptStatus('throw');
     expect(r).toEqual({ outcome: 'resolved', via: 'queued' });
   });
+
+  it('server faults degrade to queue', async () => {
+    const r = await sendWithPromptStatus(500);
+    expect(r).toEqual({ outcome: 'resolved', via: 'queued' });
+  });
+
+  it('triple-less targets on every leg defer honestly', async () => {
+    const { root, restore } = await freshRoot('v2send-notriple-');
+    process.env.MESH_ENUM_PORTS = '4501';
+    await seedPeer('v2-peer', { agent: 'unknown' });
+    const posts: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      const u = String(url);
+      if (u === 'http://127.0.0.1:4501/api/session/active') {
+        return jsonResponse({ data: { 'v2-peer': { type: 'running' } } });
+      }
+      if (u === 'http://127.0.0.1:4501/api/session/v2-peer') {
+        return jsonResponse({ data: { id: 'v2-peer', agent: 'unknown' } });
+      }
+      if (u.endsWith('/prompt')) {
+        posts.push(u);
+        return jsonResponse({ id: 'x' });
+      }
+      return new Response('down', { status: 404 });
+    }) as unknown as typeof fetch;
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    try {
+      const out = JSON.parse(
+        String(
+          (
+            await (mesh_send.execute as any)(
+              { target: 'v2-peer', text: 'hello' },
+              { sessionID: 'v2-caller', agent: 'manager' },
+            )
+          ).output,
+        ),
+      ) as { via: string };
+      expect(out.via).toBe('queued');
+      expect(posts).toHaveLength(0);
+    } finally {
+      delete process.env.MESH_ENUM_PORTS;
+      await safeRm(root);
+      restore();
+    }
+  });
+
+  it('v1 transport fault with live v2 sibling admits there', async () => {
+    const { root, restore } = await freshRoot('v2send-failover-');
+    process.env.MESH_ENUM_PORTS = '4501';
+    await seedPeer('v2-peer', { agent: 'alfred', model: 'p/m' });
+    globalThis.fetch = (async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      if (u.includes('prompt_async')) throw new Error('reset');
+      if (u === 'http://127.0.0.1:4501/api/session/active') {
+        return jsonResponse({ data: { 'v2-peer': { type: 'running' } } });
+      }
+      if (u === 'http://127.0.0.1:4501/api/session/v2-peer') {
+        return jsonResponse({
+          data: {
+            id: 'v2-peer',
+            agent: 'alfred',
+            model: { providerID: 'p', id: 'm' },
+          },
+        });
+      }
+      if (u === 'http://127.0.0.1:4501/api/session/v2-peer/prompt') {
+        return jsonResponse({ id: 'inbox_2' });
+      }
+      return new Response('down', { status: 404 });
+    }) as unknown as typeof fetch;
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    try {
+      const out = JSON.parse(
+        String(
+          (
+            await (mesh_send.execute as any)(
+              { target: 'v2-peer', text: 'hello' },
+              { sessionID: 'v2-caller', agent: 'manager' },
+            )
+          ).output,
+        ),
+      ) as { via: string; id: string };
+      expect(out.via).toBe('admitted');
+      expect(out.id).toBe('inbox_2');
+    } finally {
+      delete process.env.MESH_ENUM_PORTS;
+      await safeRm(root);
+      restore();
+    }
+  });
 });
 
   it('v1 admit never touches v2 paths', async () => {

@@ -89,6 +89,7 @@ function fakeSetupCtx(
   locationDir = '/tmp/v2loc',
 ) {
   const tools: CapturedDef[] = [];
+  const hooks: Record<string, (event: { sessionID: string }) => unknown> = {};
   const ctx = {
     session: {
       get: sessionGet ?? (async () => ({})),
@@ -105,7 +106,10 @@ function fakeSetupCtx(
         { id: 'mesh_send' },
         { id: 'mesh_broadcast' },
       ],
-      hook: async () => ({ dispose: async () => {} }),
+      hook: async (name: string, cb: (event: { sessionID: string }) => unknown) => {
+        hooks[name] = cb;
+        return { dispose: async () => {} };
+      },
       reload: async () => {},
     },
     event: {
@@ -119,7 +123,7 @@ function fakeSetupCtx(
       list: async () => [],
     },
   };
-  return { ctx, tools };
+  return { ctx, tools, hooks };
 }
 
 async function readEntry(id: string) {
@@ -238,6 +242,273 @@ describe('v2 tool calls enrich incomplete rows', () => {
     expect(gets).toBe(0);
     const row = (await readEntry('ses_full')) as Record<string, unknown>;
     expect(row.directory).toBe('/tmp/kept');
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+});
+
+describe('v2 presence failure modes', () => {
+  it('title-only events store unknown agent instead of throwing', async () => {
+    const { root, restore } = await freshRoot('v2pres-bare-');
+    const created = {
+      type: 'session.created',
+      id: 'evt_9',
+      data: { sessionID: 'ses_bare', title: 'Bare title' },
+    };
+    const { ctx } = fakeSetupCtx([created]);
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    await waitFor(async () => (await readEntry('ses_bare')) !== undefined, 'row');
+    const row = (await readEntry('ses_bare')) as Record<string, unknown>;
+    expect(row.agent).toBe('unknown');
+    expect(row.title).toBe('Bare title');
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('session read faults fall back to tool context without throwing', async () => {
+    const { root, restore } = await freshRoot('v2pres-fault-');
+    const { ctx, tools } = fakeSetupCtx(
+      [],
+      async () => {
+        throw new Error('host away');
+      },
+      root,
+    );
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    const register = tools.find((t) => t.name === 'mesh_register');
+    await register?.execute(
+      { summary: 'relay' },
+      { sessionID: 'ses_fault', agent: 'plan' },
+    );
+    const row = (await readEntry('ses_fault')) as Record<string, unknown>;
+    expect(row.agent).toBe('plan');
+    expect(row.directory).toBe(root);
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('setup hands the claimer live closures over the setup context', async () => {
+    const { root, restore } = await freshRoot('v2pres-closures-');
+    const prompted: unknown[] = [];
+    const { ctx } = fakeSetupCtx([]);
+    (ctx.session as Record<string, unknown>)['prompt'] = async (
+      input: unknown,
+    ) => {
+      prompted.push(input);
+      return { id: 'inbox_1' };
+    };
+    const { resetV2Singleflight } = await import('../src/v2singleflight.js');
+    resetV2Singleflight();
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    const claimerMod = await import('../src/claimer.js');
+    const calls = (
+      claimerMod.configureClaimer as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const deps = calls[calls.length - 1][0] as {
+      getOwnIds: () => string[];
+      getClient: () => null;
+      getV2Client: () => {
+        prompt: (input: {
+          sessionID: string;
+          text: string;
+          delivery: 'steer' | 'queue';
+        }) => Promise<unknown>;
+      } | null;
+      getRegistry: () => Promise<Record<string, unknown>>;
+    };
+    expect(Array.isArray(deps.getOwnIds())).toBe(true);
+    expect(deps.getClient()).toBeNull();
+    await deps.getV2Client()?.prompt({
+      sessionID: 'ses_x',
+      text: 'hi',
+      delivery: 'steer',
+    });
+    expect(prompted).toEqual([
+      { sessionID: 'ses_x', text: 'hi', delivery: 'steer' },
+    ]);
+    await expect(deps.getRegistry()).resolves.toBeDefined();
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('tool hooks own the acting session for later claims', async () => {
+    const { root, restore } = await freshRoot('v2pres-hookown-');
+    const { ctx, hooks } = fakeSetupCtx([]);
+    const {
+      resetV2Singleflight,
+      v2OwnedIds,
+    } = await import('../src/v2singleflight.js');
+    resetV2Singleflight();
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    await hooks['execute.before']({ sessionID: 'ses-hooked' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(v2OwnedIds()).toContain('ses-hooked');
+    resetV2Singleflight();
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('string models persist verbatim from events', async () => {
+    const { root, restore } = await freshRoot('v2pres-strmodel-');
+    const created = {
+      type: 'session.created',
+      id: 'evt_s',
+      data: {
+        sessionID: 'ses_strmodel',
+        agent: 'alfred',
+        model: 'acme/reasoner',
+      },
+    };
+    const { ctx } = fakeSetupCtx([created]);
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    await waitFor(
+      async () => (await readEntry('ses_strmodel')) !== undefined,
+      'row',
+    );
+    const row = (await readEntry('ses_strmodel')) as Record<string, unknown>;
+    expect(row.model).toBe('acme/reasoner');
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('id-less created events write nothing and throw nothing', async () => {
+    const { root, restore } = await freshRoot('v2pres-noid-');
+    const created = { type: 'session.created', id: 'evt_n', data: {} };
+    const { ctx } = fakeSetupCtx([created]);
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    await new Promise((r) => setTimeout(r, 50));
+    const { readRegistry } = await import('../src/registry.js');
+    expect(Object.keys(await readRegistry())).toHaveLength(0);
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('parented events record the subagent type', async () => {
+    const { root, restore } = await freshRoot('v2pres-sub-');
+    const created = {
+      type: 'session.created',
+      id: 'evt_p',
+      data: {
+        sessionID: 'ses_sub',
+        agent: 'builder',
+        parentID: 'ses_parent',
+      },
+    };
+    const { ctx } = fakeSetupCtx([created]);
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    await waitFor(
+      async () => (await readEntry('ses_sub')) !== undefined,
+      'row',
+    );
+    const row = (await readEntry('ses_sub')) as Record<string, unknown>;
+    expect(row.sessionType).toBe('subagent');
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('empty hook ids own nothing and throw nothing', async () => {
+    const { root, restore } = await freshRoot('v2pres-emptyhook-');
+    const { ctx, hooks } = fakeSetupCtx([]);
+    const {
+      resetV2Singleflight,
+      v2OwnedIds,
+    } = await import('../src/v2singleflight.js');
+    resetV2Singleflight();
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    await hooks['execute.before']({ sessionID: '' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(v2OwnedIds()).toEqual([]);
+    resetV2Singleflight();
+    await cleanup();
+    await safeRm(root);
+    restore();
+  });
+
+  it('setup survives a corrupt registry without losing tools', async () => {
+    const { root, restore } = await freshRoot('v2pres-corrupt-');
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(join(root, 'registry.json'), '{garbage');
+    const { DatabaseSync } = await import('node:sqlite');
+    const during = join(root, 'during.db');
+    const db = new DatabaseSync(during);
+    db.exec(
+      'CREATE TABLE session(id TEXT PRIMARY KEY, agent TEXT, directory TEXT, title TEXT, time_updated INTEGER, parent_id TEXT)',
+    );
+    db.prepare('INSERT INTO session VALUES(?,?,?,?,?,?)').run(
+      'ses-corrupt-adopt',
+      'a',
+      '/tmp/c',
+      'T',
+      Date.now(),
+      null,
+    );
+    db.close();
+    const prevDb = process.env.OPENCODE_MESH_DB_PATH;
+    process.env.OPENCODE_MESH_DB_PATH = during;
+    const { ctx, tools } = fakeSetupCtx([]);
+    const mod = await import('../plugin/opencode-mesh-v2.js');
+    const cleanup = await (
+      mod.default as unknown as {
+        setup: (c: unknown) => Promise<() => Promise<void>>;
+      }
+    ).setup(ctx);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'mesh_broadcast',
+      'mesh_peers',
+      'mesh_register',
+      'mesh_send',
+    ]);
+    if (prevDb === undefined) delete process.env.OPENCODE_MESH_DB_PATH;
+    else process.env.OPENCODE_MESH_DB_PATH = prevDb;
     await cleanup();
     await safeRm(root);
     restore();

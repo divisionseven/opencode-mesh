@@ -48,6 +48,7 @@ import {
   mergeV2Ids,
   releaseV2Setup,
   removeV2Ids,
+  runV2SharedTick,
   v2OwnedIds,
 } from "../src/v2singleflight.js";
 import { v2ModelString } from "../src/v2routes.js";
@@ -208,16 +209,10 @@ async function ensureV2Presence(
   const enriched = v2EnrichedAt.get(sessionId);
   if (enriched !== undefined && now - enriched < EVICT_GRACE_MS) return;
   let stored: Record<string, unknown> | undefined;
-  try {
-    const reg = await readRegistry().catch(
-      () => ({}) as Record<string, unknown>,
-    );
-    stored = (reg as unknown as Record<string, Record<string, unknown>>)[
-      sessionId
-    ];
-  } catch {
-    stored = undefined;
-  }
+  const reg = await readRegistry();
+  stored = (reg as unknown as Record<string, Record<string, unknown>>)[
+    sessionId
+  ];
   const needsAgent =
     typeof stored?.agent !== "string" || stored.agent === "unknown";
   const needsDir =
@@ -282,10 +277,8 @@ async function handleV2Event(raw: unknown): Promise<void> {
     if (!id) return;
     // Attached-exempt: the oracle still lists this id, so the delete path
     // alone never removes it; expiry owns the transition (mirrors V1).
-    try {
-      const reg = (await readRegistry().catch(() => ({} as Record<string, unknown>))) as Record<string, unknown>;
-      if (isAttachedExempt(reg[id])) return;
-    } catch {}
+    const reg = (await readRegistry()) as Record<string, unknown>;
+    if (isAttachedExempt(reg[id])) return;
     try {
       await atomicUpdateRegistry((reg) => {
         delete (reg as Record<string, unknown>)[id];
@@ -563,19 +556,7 @@ export default Plugin.define({
         if (pass) mergeV2Ids([...pass.adopted, ...pass.heartbeated]);
       } catch {}
       armV2SharedTimer(() => {
-        void (async () => {
-          // Periodic re-adopt bounds restart blindness to one tick: fresh
-          // database rows rejoin even when no event or tool ever fires.
-          try {
-            const pass = await adoptDbSessions().catch(() => null);
-            if (pass) mergeV2Ids([...pass.adopted, ...pass.heartbeated]);
-          } catch {}
-          for (const sid of v2OwnedIds()) {
-            try {
-              await heartbeat(sid);
-            } catch {}
-          }
-        })();
+        void runV2SharedTick();
       });
     }
 

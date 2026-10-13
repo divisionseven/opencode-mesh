@@ -229,15 +229,10 @@ async function pollV2Row(
   let known = entry !== undefined;
   let source: "registry" | "db" = "registry";
   if (!known) {
-    try {
-      const { readDbTriple } = await import("./discovery.js");
-      const triple = await readDbTriple(row.target_session);
-      known = triple !== null;
-      if (known) source = "db";
-    // Why: best-effort — triple read failure terminalizes, never throws.
-    } catch {
-      known = false;
-    }
+    const { readDbTriple } = await import("./discovery.js");
+    const triple = await readDbTriple(row.target_session);
+    known = triple !== null;
+    if (known) source = "db";
   }
   if (!known) {
     await terminalizeOrRelease(row, ownerId, "receiver-unresolvable", "receiver-unresolvable", outbox, {
@@ -471,32 +466,15 @@ async function tryV2ClaimFallback(
     const triple = v2RowToTriple(located.row);
     const stored = reg[row.target_session] ?? {};
     const merged = { ...stored, ...(triple ?? {}) };
-    let receiver: ReceiverWireState | null = null;
-    let missTrail: MissStep[] = [];
-    let dbEvidence: Record<string, unknown> = {};
-    try {
-      const detailed = await resolveReceiverWireDetailed(
-        null,
-        row.target_session,
-        merged,
-        { directRow: located.row },
-      );
-      receiver = detailed.receiver;
-      missTrail = detailed.trail;
-      dbEvidence = (detailed.dbEvidence ?? {}) as Record<string, unknown>;
-    } catch {
-      receiver = null;
-      missTrail = [];
-      dbEvidence = {};
-    }
-    if (!receiver) {
-      await terminalizeOrRelease(row, ownerId, "receiver-unresolvable", "receiver-unresolvable", outbox, {
-        receiverSource: null,
-        missTrail,
-        ...dbEvidence,
-      });
-      return true;
-    }
+    // Unresolvable here defers through the shared release below: the v1
+    // leg ahead already settles every case it can see, so anything left
+    // unaddressable simply waits for redelivery like any other deferral.
+    const receiver = (
+      await resolveReceiverWireDetailed(null, row.target_session, merged, {
+        directRow: located.row,
+      }).catch(() => null)
+    )?.receiver;
+    if (!receiver) return false;
     const senderEntry = reg[row.from_session] as { agent?: string } | undefined;
     const liveAgent =
       senderEntry && typeof senderEntry.agent === "string" && senderEntry.agent !== "unknown" && senderEntry.agent.length > 0
