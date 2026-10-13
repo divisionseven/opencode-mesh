@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog][keep-a-changelog],
 and this project adheres to
 [Semantic Versioning][sem-ver].
 
-## [Unreleased]
+## [1.2.0] - 2026-10-12
 
 ### Fixed
 
@@ -143,6 +143,7 @@ Initial release. Works with OpenCode 1.x (`>=1.3.13 <2.0.0`). Support for OpenCo
 
 - Report sensitive issues through the private advisory channel in `SECURITY.md`.
 
+[1.2.0]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.2.0
 [1.1.0]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.1.0
 [1.0.1]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.0.1
 [1.0.0]: https://github.com/divisionseven/opencode-mesh/releases/tag/v1.0.0
