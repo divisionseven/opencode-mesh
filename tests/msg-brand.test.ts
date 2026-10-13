@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 // Alphabet matrix: always-branded direct plus broadcast.
 // Branded claimer envelope id; legacy Date form rejected.
-// Mutant: swapping brand helper reddens the gates.
+// Negative control: swapping the brand helper fails the checks below.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -85,8 +85,8 @@ describe('msg brand alphabet', () => {
     await safeRm(root); restore();
   });
 
-  it('mutant probe: stripping the brand seed model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-brand-mutant-');
+  it('negative control: removing the brand-target model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-brand-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['brand-target'] = { sessionId: 'brand-target', agent: 'a', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };

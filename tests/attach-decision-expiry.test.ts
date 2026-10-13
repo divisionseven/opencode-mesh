@@ -407,7 +407,7 @@ describe('oracle plus tracker mechanics', () => {
       clampLastAction: (a: number, b: number) => Math.max(a, b),
       isForwardJump: () => false,
       readLastActionAt: () => null,
-      stampLastAction: async () => { throw new Error('mutant: tracker down'); },
+      stampLastAction: async () => { throw new Error('simulated: tracker down'); },
       noteBusyActive: async () => {},
     }));
     const { root, restore } = await freshRoot('mesh-stampdrop-');

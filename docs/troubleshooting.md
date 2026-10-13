@@ -54,7 +54,7 @@ If status shows skill as `not_shipped`, re-run `npx opencode-mesh install` (rewr
 
 **Symptom:** Send returns `admitted` but the target never acts on the message.
 
-**Cause:** `via: "admitted"` is a server 204 only, not proof the agent saw it. The target may be busy, the session may have closed, wake is suppressed, or the sender has no local serve host on the loopback (those sends take the claim path and read `queued`, never `admitted`): unresolvable receivers never POST, the send degrades to claim and the row defers for the claimer poller instead of admitting server-side, so a well-formed but unrecognized agent never reaches the wire.
+**Cause:** `via: "admitted"` is a server 2xx only (204 V1, 200 V2), not proof the agent saw it. The target may be busy, the session may have closed, wake is suppressed, or the sender has no local serve host on the loopback (those sends take the claim path and read `queued`, never `admitted`): unresolvable receivers never POST, the send degrades to claim and the row defers for the claimer poller instead of admitting server-side, so a well-formed but unrecognized agent never reaches the wire.
 
 **Fix:**
 
@@ -188,25 +188,32 @@ export OPENCODE_MESH_ROOT=/tmp/mesh-fresh/nested
 
 **Verify:** `status --json` shows the correct `meshRoot.resolved`; `mesh_peers` returns results.
 
-### OpenCode 2 beta: Plugin absent
+### Plugin entry triage
 
-**Symptom:** On an `opencode2` beta host, `status` shows plugin as `absent` and mesh tools never appear for my agent. No error is raised.
+**Symptom:** `status` shows plugin as `absent` and mesh tools never appear.
+No error is raised.
 
-**Cause:** The beta loader expects a dual `{id, setup}` export shape while the mesh currently ships the stable bare-function plugin (`plugin/opencode-mesh.ts`). The result is a silent skip, not a failure.
+**Cause:** An install that wrote only one plugin key, a `-opencode-mesh`
+disable directive, or a mismatched spec across keys each reads as missing.
 
-**Fix:**
+**Triage (in order):**
 
 ```bash
-# 1. Confirm you are on the beta (any 2.x host version)
-opencode --version
-# 2. Switch back to opencode 1.x for 1.0.0
-npm install -g opencode@1
-# 3. Restart opencode (plugins do not hot reload)
-# 4. Check status
-npx opencode-mesh status
+# 1. Ask status which key the host can read
+npx opencode-mesh status --json
+# pluginSources.state is one of: absent, legacy-only, native-only,
+# dual-server, cli-augmented, disabled. pluginSources.specMismatch flags
+# two specs for the same package.
+# 2. legacy-only (one key present, other key missing): add the missing key
+npx opencode-mesh install
+# 3. disabled: a -opencode-mesh directive wins over presence; remove it,
+# then reinstall
+# 4. specMismatch true: converge both keys to "opencode-mesh", then reinstall
+# 5. Restart opencode (plugins do not hot reload) and re-check status
 ```
 
-**Verify:** `status` reports plugin as `present` on the 1.x host; `mesh_peers({})` returns results. V2 support is in scope and is planned for a future release on a post-1.0 feature branch; thank you for your patience. Please submit an issue if you are an `opencode2` user so we can gauge demand.
+**Verify:** `status --json` shows `plugin: present` with
+`pluginSources.state` as `dual-server`; `mesh_peers({})` returns results.
 
 ## FAQ
 

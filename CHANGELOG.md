@@ -8,6 +8,71 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix 30-second tool calls on large databases by caching message recency
+  and skipping it on the send path (root cause: every send and peers call
+  full-scanned million-row message tables for display badges the send union
+  never uses; fix mechanism: 60-second recency cache plus a send union
+  without recency; gate: recency and skip tests green, full suite green)
+- Fix v2 sessions undiscoverable after a server restart by rebuilding live
+  ownership from database recency (root cause: v2 sessions share one server
+  process, so a restart empties the in-memory owned set while sessions stay
+  alive, leaving queued rows with no claimant until a manual touch; fix
+  mechanism: setup-time plus shared-tick adoption of sessions active inside
+  the activity window with a per-pass cap, reading both session and
+  session_v2 tables plus message and part recency, heartbeating known rows
+  and inserting missing ones without overwriting stored identity, safe
+  across servers because outbox claims are atomic; gate: v2adopt suite
+  failing before and green after, full suite green)
+
+- Fix v2 delivery queuing forever by adding v2 transport legs beside the
+  unchanged v1 paths (root cause: the v2 adapter registered tools but every
+  wire leg dialed v1-only routes that v2 servers never serve, so resolution
+  missed and the clientless claimer deferred to the attempt bound; fix
+  mechanism: v1-first then v2-fallback route probing, session locate, and
+  user admission plus a v2 claimer fallback, with the v1 204 contract,
+  guards, and probe budgets untouched; gate: v2routes, v2send, and v2presence
+  suites failing before and green after, full suite green)
+- Fix v2 presence rows missing identity by learning agent, directory, model,
+  and title from created events, session reads, and the instance location
+  (root cause: the v2 touch path heartbeated only, and tool contexts carry
+  no directory on v2, so rows stayed register-only with no repo or model and
+  receiver resolution always missed; fix mechanism: event-data upsert plus
+  bounded session-get enrichment with stored-value precedence; gate:
+  v2presence suite failing before and green after)
+- Fix v2 injected messages waking without a chat bubble by admitting
+  through the user prompt channel instead of synthetic admission (root
+  cause: synthetic messages wake the runner but the chat UI draws only user
+  messages as bubbles, while v1 prompt_async always wrote user messages;
+  fix mechanism: sender-direct and claimer v2 legs post user admission with
+  the same steer and queue wake mapping and identical prefix text; gate:
+  v2routes, v2send, and v2claimer suites updated and green, full suite
+  green)
+- Fix v2 claimer never injecting by wiring the setup context prompt
+  admission behind the poll loop (root cause: v2 setups configured the
+  claimer with a null client on purpose, so owned rows deferred to the
+  attempt bound on multi-server hosts where no single loopback port answers;
+  fix mechanism: optional in-process v2 client on the claimer deps that
+  admits owned rows via user admission with steer and queue
+  delivery mapped from wake, unknown targets deferring to the bound; gate:
+  v2claimer suite failing before and green after, full suite green)
+
+### Added
+
+- Work from one plugin on OpenCode >= 1.3.13, with the same four tools and
+  the same send, peers, and skill behavior on every host
+  (gate: export shape plus double-probe import legs green; peers green on
+  v1 1.18.35 and v2 2.0.26; road test rollback clean, list back at
+  baseline)
+- Keep guards and message envelopes identical on every host
+  (gate: wrapper-versus-barrel delegation matrix green, stable shape
+  untouched)
+- Install and restore the plugin entry idempotently, and report six install
+  states the same way each time
+  (gate: dual-key splicer plus idempotent install plus byte-equal restore
+  plus six-state matrix green)
+
 ## [1.1.0] - 2026-09-21
 
 ### Added
@@ -39,7 +104,7 @@ and this project adheres to
 
 ### Removed
 
-- Drop the broadcast mutant probe and registry retention probe: both read repo source and asserted on text, banned under the vitest rules, with behavior already owned by gate and prune tests (gate: full suite green minus two plus a repo-wide source-read sweep)
+- Drop the broadcast source-reading probe and registry retention probe: both read repo source and asserted on text, banned under the vitest rules, with behavior already owned by gate and prune tests (gate: full suite green minus two plus a repo-wide source-read sweep)
 
 ## [1.0.1] - 2026-09-19
 

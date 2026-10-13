@@ -1,9 +1,11 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
 // Lazy node:sqlite gate: zero static edges, fail-closed on loader throw.
-// Mutant: restore a static `import { DatabaseSync } from "node:sqlite"` in src/outbox.ts
-// and the census test reddens; stub loadSqlite to throw and the fail-closed tests redden
-// when any path propagates instead of mapping to STORAGE_UNAVAILABLE / [] / false / 0.
+// Negative control: restoring a static
+// `import { DatabaseSync } from "node:sqlite"` in src/outbox.ts fails the
+// census check; stubbing loadSqlite to throw fails the fail-closed checks
+// when any path propagates instead of mapping to STORAGE_UNAVAILABLE / [] /
+// false / 0.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -96,7 +98,7 @@ describe('sqlite lazy gate', () => {
   it('readDbSessions fail-closed to {} on loader throw (deletes zero)', async () => {
     vi.resetModules();
     vi.doMock('node:sqlite', () => {
-      throw new Error('mutant: no sqlite build');
+      throw new Error('simulated: no sqlite build');
     });
     const d = await import('../src/discovery.js');
     expect(await d.readDbSessions(join(tmpdir(), 'mesh-nope.db'))).toEqual({});
@@ -107,7 +109,7 @@ describe('sqlite lazy gate', () => {
     const { root, restore } = await freshRoot('mesh-lazy-');
     vi.resetModules();
     vi.doMock('node:sqlite', () => {
-      throw new Error('mutant: no sqlite build');
+      throw new Error('simulated: no sqlite build');
     });
     const ob = await import('../src/outbox.js');
     await expect(
@@ -127,7 +129,7 @@ describe('sqlite lazy gate', () => {
     const { root, restore } = await freshRoot('mesh-lazy-receipt-');
     vi.resetModules();
     vi.doMock('node:sqlite', () => {
-      throw new Error('mutant: no sqlite build');
+      throw new Error('simulated: no sqlite build');
     });
     const ob = await import('../src/outbox.js');
     const r = await ob.receiptById('msg_00000000000000deadbeef0000', root);

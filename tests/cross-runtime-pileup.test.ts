@@ -217,8 +217,8 @@ describe('cross-runtime pile-up gate', () => {
     const restoreMarker = forceBunMarker();
     try {
       vi.resetModules();
-      vi.doMock('bun:sqlite', () => { throw new Error('mutant: no bun driver'); });
-      vi.doMock('node:sqlite', () => { throw new Error('mutant: no node driver'); });
+      vi.doMock('bun:sqlite', () => { throw new Error('simulated: no bun driver'); });
+      vi.doMock('node:sqlite', () => { throw new Error('simulated: no node driver'); });
       const ob = await import('../src/outbox.js');
       await expect(
         ob.enqueue({ target_session: 'ses-T', from_session: 'ses-F', from_agent: 'a', text: 'hi' }, root)

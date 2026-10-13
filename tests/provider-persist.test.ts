@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 // Every mesh inject carries explicit model plus
 // noReply:true so createUserMessage never takes the NoProviders death path.
-// Mutant: drop the model key from one body and the persist gates redden.
+// Negative control: dropping the model key from one body fails the persist
+// checks below.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -148,8 +149,8 @@ describe('provider persist matrix', () => {
     await safeRm(root); restore();
   });
 
-  it('mutant probe: stripping the echo seed model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-modelreg-mutant-');
+  it('negative control: removing the echo-target model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-modelreg-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['regmodel-target'] = { sessionId: 'regmodel-target', agent: 'a', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };

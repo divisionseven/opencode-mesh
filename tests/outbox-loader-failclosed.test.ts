@@ -10,7 +10,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import * as ob from '../src/outbox.js';
 
 vi.mock('node:sqlite', () => {
-  throw new Error('mutant: no sqlite build');
+  throw new Error('simulated: no sqlite build');
 });
 
 afterEach(() => {

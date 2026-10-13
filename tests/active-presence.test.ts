@@ -329,7 +329,7 @@ describe('active presence', () => {
   });
 
   it('probe queues stored-but-gone without a model instead of POST-404ing', async () => {
-    const { root, restore } = await freshRoot('mesh-ap5-mutant-');
+    const { root, restore } = await freshRoot('mesh-ap5-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['ses-gone'] = { sessionId: 'ses-gone', agent: 'tester', description: 'Title ses-gone', directory: '/tmp/x', updatedAt: Date.now() };

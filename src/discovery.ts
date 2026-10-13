@@ -7,7 +7,7 @@ import { join } from "node:path";
 // Type-only node shape (erased; the driver resolves lazily in loadSqlite).
 // Forked SqliteDb adapter converges node plus bun via loadSqlite.
 import type { DatabaseSync } from "node:sqlite";
-import { ACTIVE_WINDOW_MS, ATTACH_GONE_GRACE_MS, ATTACH_POLL_MS, EVICT_GRACE_MS } from "./constants.js";
+import { ACTIVE_WINDOW_MS, ATTACH_GONE_GRACE_MS, ATTACH_POLL_MS, EVICT_GRACE_MS, RECENCY_TTL_MS } from "./constants.js";
 import { deriveSessionType } from "./expiry.js";
 import { isGenericTitle } from "./identity.js";
 import { loadSqlite, type SqliteDb } from "./outbox.js";
@@ -43,6 +43,7 @@ export function setLiveClient(client: unknown): void {
 
 /**
  * DB session scrape, read-only; failures yield partial maps, delete zero.
+ * Unions session and session_v2; v2 hosts persist live sessions there only.
  */
 export async function readDbSessions(dbPath?: string): Promise<DbSessionMap> {
   const out: DbSessionMap = {};
@@ -53,32 +54,33 @@ export async function readDbSessions(dbPath?: string): Promise<DbSessionMap> {
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA query_only = ON");
     type Row = { id: unknown; agent: unknown; directory: unknown; title: unknown; time_updated: unknown; parent_id?: unknown };
-    let rows: Row[] | null = null;
-    try {
-      rows = db
-        .prepare(`SELECT id, agent, directory, title, time_updated, parent_id FROM session`)
-        .all() as unknown as Row[];
-    } catch {
-      rows = null;
-    }
-    if (!rows) {
-      // Fallback for stores without parent_id. Every
-      // type defaults to primary, so the fallback never expires early.
+    const readTable = (table: string): Row[] => {
       try {
-        const legacy = db
-          .prepare(`SELECT id, agent, directory, title, time_updated FROM session`)
-          .all() as unknown as Row[];
-        rows = legacy.map((r) => ({ ...r, parent_id: null }));
+        return db!.prepare(
+          `SELECT id, agent, directory, title, time_updated, parent_id FROM ${table}`,
+        ).all() as unknown as Row[];
       } catch {
-        return out;
+        // Fallback for stores without parent_id. Every
+        // type defaults to primary, so the fallback never expires early.
+        try {
+          const legacy = db!.prepare(
+            `SELECT id, agent, directory, title, time_updated FROM ${table}`,
+          ).all() as unknown as Row[];
+          return legacy.map((r) => ({ ...r, parent_id: null }));
+        } catch {
+          return [];
+        }
       }
-    }
-    for (const r of rows) {
+    };
+    // v1 first, v2 second, fresher wins on shared ids.
+    for (const r of [...readTable("session"), ...readTable("session_v2")]) {
       if (typeof r.id === "string" && r.id.length > 0) {
         const rawTs = typeof r.time_updated === "number" ? r.time_updated : 0;
         // ms-normalize guard: live rows are ms scale; second-scale values scale
         // by 1000 so fixtures in seconds badge correctly (no-op live).
         const dbUpdatedAt = rawTs > 0 && rawTs < 1e12 ? rawTs * 1000 : rawTs;
+        const prev = out[r.id];
+        if (prev && prev.dbUpdatedAt >= dbUpdatedAt) continue;
         out[r.id] = {
           id: r.id,
           agent: typeof r.agent === "string" && r.agent.length > 0 ? r.agent : null,
@@ -120,12 +122,36 @@ export async function readDbTripleDetailed(
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA query_only = ON");
     type Row = { agent: unknown; model: unknown };
-    let row: Row | null = null;
-    try {
-      const stmt = db.prepare(`SELECT agent, model FROM session WHERE id = ? LIMIT 1`);
-      const raw = stmt.get(sessionId) as unknown as Row | undefined;
-      row = raw ?? null;
-    } catch (err) {
+    let v1Threw: unknown = null;
+    let v2Threw: unknown = null;
+    const readRow = (
+      table: string,
+      onThrow: (err: unknown) => void,
+    ): Row | null => {
+      try {
+        const stmt = db!.prepare(
+          `SELECT agent, model FROM ${table} WHERE id = ? LIMIT 1`,
+        );
+        const raw = stmt.get(sessionId) as unknown as Row | undefined;
+        return raw ?? null;
+      } catch (err) {
+        onThrow(err);
+        return null;
+      }
+    };
+    // v1 vocabulary preserved; v2 table fills v2-host gaps. Both throwing
+    // stays db-throw.
+    const v1 = readRow("session", (err) => {
+      v1Threw = err;
+    });
+    const v2 = !v1
+      ? readRow("session_v2", (err) => {
+          v2Threw = err;
+        })
+      : null;
+    const row = v1 ?? v2;
+    if (!row && v1Threw !== null && v2Threw !== null) {
+      const err = v2Threw;
       return { ok: false, reason: "db-throw", dbPath: attempted, dbCode: codeOf(err), dbError: String(err).slice(0, 300) };
     }
     if (!row) return { ok: false, reason: "db-row-absent", dbPath: attempted };
@@ -170,7 +196,23 @@ export async function readDbTriple(
 }
 
 /** DB message-leg recency at display time; failures yield empty maps. */
+const recencyCache = new Map<string, { at: number; map: Record<string, number> }>();
+
 export async function readMessageRecency(dbPath?: string): Promise<Record<string, number>> {
+  const key = dbPath ?? defaultDbPath();
+  const hit = recencyCache.get(key);
+  if (hit && Date.now() - hit.at <= RECENCY_TTL_MS) return { ...hit.map };
+  const map = await readMessageRecencyLive(dbPath);
+  recencyCache.set(key, { at: Date.now(), map });
+  return { ...map };
+}
+
+/** Test seam: drops cached recency so the next read hits the database. */
+export function clearRecencyCache(): void {
+  recencyCache.clear();
+}
+
+async function readMessageRecencyLive(dbPath?: string): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   let db: SqliteDb | null = null;
   try {
@@ -178,14 +220,28 @@ export async function readMessageRecency(dbPath?: string): Promise<Record<string
     db = new Ctor(dbPath ?? defaultDbPath(), { readOnly: true });
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA query_only = ON");
-    const rows = db
-      .prepare(`SELECT session_id, MAX(time_updated) AS t FROM message GROUP BY session_id`)
-      .all() as unknown as Array<{ session_id: unknown; t: unknown }>;
-    for (const r of rows) {
-      if (typeof r.session_id === "string" && r.session_id.length > 0 && typeof r.t === "number" && r.t > 0) {
-        out[r.session_id] = r.t > 0 && r.t < 1e12 ? r.t * 1000 : r.t;
+    const merge = (rows: Array<{ session_id: unknown; t: unknown }>) => {
+      for (const r of rows) {
+        if (typeof r.session_id === "string" && r.session_id.length > 0 && typeof r.t === "number" && r.t > 0) {
+          const t = r.t > 0 && r.t < 1e12 ? r.t * 1000 : r.t;
+          if (!out[r.session_id] || out[r.session_id] < t) out[r.session_id] = t;
+        }
       }
-    }
+    };
+    try {
+      merge(
+        db
+          .prepare(`SELECT session_id, MAX(time_updated) AS t FROM message GROUP BY session_id`)
+          .all() as unknown as Array<{ session_id: unknown; t: unknown }>,
+      );
+    } catch {}
+    try {
+      merge(
+        db
+          .prepare(`SELECT session_id, MAX(time_updated) AS t FROM part GROUP BY session_id`)
+          .all() as unknown as Array<{ session_id: unknown; t: unknown }>,
+      );
+    } catch {}
   } catch {
     return out;
   } finally {
@@ -218,9 +274,19 @@ export function mergeStatus(tcp: StatusMap | null, live: StatusMap | null): Stat
   return { ...(tcp ?? {}), ...(live ?? {}) };
 }
 
-/** TCP single-port map only: the one view safe for confirmed-dead persistence. */
+/** TCP status view: v1 single-port map, v1-plus-v2 union only when it misses. */
 export async function readTcpStatus(): Promise<StatusMap | null> {
-  return fetchSinglePortStatusMap();
+  const single = await fetchSinglePortStatusMap();
+  // Fast path keeps v1-green behavior (and probe counts) identical; the
+  // union runs solely where the pin is dark, which is exactly the v2 case.
+  // Lazy import keeps discovery free of a module-level back edge.
+  if (single) return single;
+  try {
+    const { activeUnion } = await import("./v2routes.js");
+    return await activeUnion();
+  } catch {
+    return null;
+  }
 }
 
 function baseRepo(dir: string): string {
@@ -327,10 +393,10 @@ export interface JoinResult {
 export const ATTACH_SNAPSHOT_MAX_AGE_MS = ATTACH_POLL_MS + ATTACH_GONE_GRACE_MS;
 
 /** Full join for display surfaces: DB existence unconditionally plus registry claims plus live overlay. */
-export async function joinAll(meshRoot?: string): Promise<JoinResult> {
+export async function joinAll(meshRoot?: string, opts?: { withRecency?: boolean }): Promise<JoinResult> {
   const reg: Registry = await readRegistry(meshRoot);
   const db = await readDbSessions();
-  const messageRecency = await readMessageRecency();
+  const messageRecency = opts?.withRecency === false ? {} : await readMessageRecency();
   const live = await readLiveStatus();
   const tcp = await readTcpStatus();
   const statusMap = mergeStatus(tcp, live);

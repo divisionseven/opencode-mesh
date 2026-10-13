@@ -17,6 +17,11 @@ import { getServerAuthHeaderSync } from "./serverAuth.js";
 import { isSilent, resolveNoReply } from "./wake.js";
 import { appendDeliveryAudit, unwrapStatusMap } from "./registry.js";
 import type { OutboxFailReason } from "./outbox.js";
+import {
+  locateSession,
+  postV2Prompt,
+  v2RowToTriple,
+} from "./v2routes.js";
 
 export interface PromptClient {
   session?: {
@@ -26,10 +31,25 @@ export interface PromptClient {
   };
 }
 
+/**
+ * v2 in-process inject client (wired by the v2 adapter from its setup
+ * context). User admission renders the chat bubble like v1; the claimer
+ * only gates on target existence.
+ */
+export interface V2InjectClient {
+  prompt: (input: {
+    sessionID: string;
+    text: string;
+    delivery: "steer" | "queue";
+  }) => Promise<unknown>;
+}
+
 export interface ClaimerDeps {
   getOwnIds: () => string[];
   getClient: () => PromptClient | null;
   getRegistry: () => Promise<Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>>;
+  /** v2 setups provide this; v1 setups leave it absent (clientless path). */
+  getV2Client?: () => V2InjectClient | null;
 }
 
 let deps: ClaimerDeps | null = null;
@@ -97,6 +117,11 @@ export async function pollClaimer(): Promise<void> {
     const clientShape = describeClientShape(c);
     const reg = (await d.getRegistry().catch(() => ({}))) as Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>;
     for (const row of rows) {
+      const v2 = d.getV2Client?.() ?? null;
+      if (!canInject && v2) {
+        await pollV2Row(row, { reg, ownerId, outbox, v2 });
+        continue;
+      }
       if (!canInject) {
         await pollClientlessRow(row, { c, reg, ownerId, clientShape, outbox });
         continue;
@@ -182,6 +207,84 @@ interface ClientlessCtx {
   outbox: typeof import("./outbox.js");
 }
 
+interface V2RowCtx {
+  reg: Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>;
+  ownerId: string;
+  outbox: typeof import("./outbox.js");
+  v2: V2InjectClient;
+}
+
+/**
+ * v2-client row: injects via in-process user admission (no ports, no
+ * auth, no receiver triple; the envelope attribution rides the text prefix
+ * as on every leg). Unknown targets terminalize; inject faults defer to the
+ * bound like every other transient. Never throws.
+ */
+async function pollV2Row(
+  row: { id: string; target_session: string; from_session: string; from_agent: string; text: string; attempts: number; silent?: number },
+  ctx: V2RowCtx,
+): Promise<void> {
+  const { reg, ownerId, outbox, v2 } = ctx;
+  const entry = reg[row.target_session] as { agent?: string } | undefined;
+  let known = entry !== undefined;
+  let source: "registry" | "db" = "registry";
+  if (!known) {
+    const { readDbTriple } = await import("./discovery.js");
+    const triple = await readDbTriple(row.target_session);
+    known = triple !== null;
+    if (known) source = "db";
+  }
+  if (!known) {
+    await terminalizeOrRelease(row, ownerId, "receiver-unresolvable", "receiver-unresolvable", outbox, {
+      receiverSource: null,
+      missTrail: [
+        { layer: "db", reason: "db-row-absent" },
+        { layer: "registry", reason: "registry-absent" },
+      ] as MissStep[],
+    });
+    return;
+  }
+  const senderEntry = reg[row.from_session] as { agent?: string } | undefined;
+  const liveAgent =
+    senderEntry && typeof senderEntry.agent === "string" && senderEntry.agent !== "unknown" && senderEntry.agent.length > 0
+      ? senderEntry.agent
+      : null;
+  const prefixAgent = liveAgent ?? row.from_agent;
+  const verified = liveAgent !== null;
+  const silentBit = isSilent({ silent: (row.silent ?? 0) === 1 });
+  const prefixed = `${formatMeshPrefix(prefixAgent, row.from_session, verified, silentBit)}\n\n${quarantineText(row.text)}`;
+  try {
+    await v2.prompt({
+      sessionID: row.target_session,
+      text: prefixed,
+      delivery: silentBit ? "queue" : "steer",
+    });
+  } catch {
+    await terminalizeOrRelease(row, ownerId, "clientless-no-route", "v2-client", outbox, {
+      route: "v2-client",
+      receiverSource: source,
+    });
+    return;
+  }
+  try {
+    await outbox.ack(row.id, ownerId);
+  // Why: best-effort — ack failure must not block the current claim cycle.
+  } catch {}
+  await appendDeliveryAudit(
+    "outbox.injected",
+    {
+      id: row.id,
+      target_session: row.target_session,
+      owner: ownerId,
+      attempts: row.attempts,
+      maxAttempts: OUTBOX_MAX_ATTEMPTS,
+      via: "v2-client",
+      receiverSource: source,
+      route: "v2-client",
+    },
+  ).catch(() => {});
+}
+
 /**
  * Cannot-inject branch for all clientless shapes; no route releases or terminalizes.
  */
@@ -208,6 +311,12 @@ async function pollClientlessRow(
   if (route === "direct") {
     const delivered = await tryDirectFallback(row, ctx, { route, probeStatus });
     if (delivered) return;
+  }
+  // v2 leg: a v2-hosted target admits here even with no live client anywhere.
+  try {
+    if (await tryV2ClaimFallback(row, ctx)) return;
+  } catch {
+    // Fallthrough shares the deferred release below; a v2 fault never drops.
   }
   // Clientless trail covers DB plus registry only; audit names skipped layers.
   let noRouteTrail: MissStep[] = [];
@@ -335,6 +444,97 @@ async function tryDirectFallback(
     } catch {
       return false;
     }
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * v2 prompt fallback for clientless processes (v2 setups own no live
+ * client by design). Mirrors the direct-fallback outcomes: admitted rows ack
+ * with a v2-prompt audit, terminal misses fail loud, anything else falls
+ * through to the deferred release. Never throws.
+ */
+async function tryV2ClaimFallback(
+  row: { id: string; target_session: string; from_session: string; from_agent: string; text: string; attempts: number; silent?: number },
+  ctx: ClientlessCtx,
+): Promise<boolean> {
+  const { reg, ownerId, clientShape, outbox } = ctx;
+  try {
+    const located = await locateSession(row.target_session);
+    if (!located || located.kind !== "v2") return false;
+    const triple = v2RowToTriple(located.row);
+    const stored = reg[row.target_session] ?? {};
+    const merged = { ...stored, ...(triple ?? {}) };
+    // Unresolvable here defers through the shared release below: the v1
+    // leg ahead already settles every case it can see, so anything left
+    // unaddressable simply waits for redelivery like any other deferral.
+    const receiver = (
+      await resolveReceiverWireDetailed(null, row.target_session, merged, {
+        directRow: located.row,
+      }).catch(() => null)
+    )?.receiver;
+    if (!receiver) return false;
+    const senderEntry = reg[row.from_session] as { agent?: string } | undefined;
+    const liveAgent =
+      senderEntry && typeof senderEntry.agent === "string" && senderEntry.agent !== "unknown" && senderEntry.agent.length > 0
+        ? senderEntry.agent
+        : null;
+    const prefixAgent = liveAgent ?? row.from_agent;
+    const verified = liveAgent !== null;
+    const silentBit = isSilent({ silent: (row.silent ?? 0) === 1 });
+    const prefixed = `${formatMeshPrefix(prefixAgent, row.from_session, verified, silentBit)}\n\n${quarantineText(row.text)}`;
+    const posted = await postV2Prompt(
+      located.port,
+      row.target_session,
+      prefixed,
+      { silent: (row.silent ?? 0) === 1 },
+    );
+    if (posted.ok) {
+      try {
+        await outbox.ack(row.id, ownerId);
+      // Why: best-effort — ack failure must not block direct fallback.
+      } catch {}
+      await appendDeliveryAudit(
+        "outbox.injected",
+        {
+          id: row.id,
+          target_session: row.target_session,
+          owner: ownerId,
+          attempts: row.attempts,
+          maxAttempts: OUTBOX_MAX_ATTEMPTS,
+          via: "v2-prompt",
+          receiverSource: receiver.source,
+          route: "claim",
+          clientShape,
+        },
+      ).catch(() => {});
+      return true;
+    }
+    if (posted.status === 404 || posted.status === 401) {
+      const reason = `direct-terminal-${posted.status}` as OutboxFailReason;
+      const directTrail: MissStep[] = [{ layer: "direct", reason: "direct-fetch-miss" }];
+      try {
+        const ok = await outbox.failRow(row.id, ownerId, reason, {
+          layer: "direct",
+          missReason: "direct-fetch-miss",
+        });
+        if (!ok) return true;
+        await appendDeliveryAudit("outbox.claim-terminal", {
+          id: row.id,
+          target_session: row.target_session,
+          owner: ownerId,
+          attempts: OUTBOX_MAX_ATTEMPTS,
+          maxAttempts: OUTBOX_MAX_ATTEMPTS,
+          reason,
+          status: posted.status,
+          missTrail: directTrail,
+        }).catch(() => {});
+      // Why: best-effort — failRow or audit failure must not block terminalization.
+      } catch {}
+      return true;
+    }
+    return false;
   } catch {
     return false;
   }

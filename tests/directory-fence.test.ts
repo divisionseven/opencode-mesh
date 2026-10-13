@@ -102,8 +102,8 @@ describe('directory fence plus provenance', () => {
     await safeRm(root); restore();
   });
 
-  it('mutant probe: stripping the fence seed model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-fence-mutant-');
+  it('negative control: removing the fenced-target model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-fence-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: any) => {
       reg['ses-tgt'] = { sessionId: 'ses-tgt', agent: 't', directory: '/t/known', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 DIVISION 7 | MI-7 (@divisionseven)
 // SPDX-License-Identifier: MIT
 // The wire agent names the receiver, never the
-// sender; the prefix keeps raw attribution. Mutant: put a sender agent on the
-// wire and the receiver-triple gates redden.
+// sender; the prefix keeps raw attribution. Negative control: putting a
+// sender agent on the wire fails the receiver checks below.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -182,8 +182,8 @@ describe('agent omit matrix', () => {
     await safeRmArmed(root); restore();
   });
 
-  it('mutant probe: stripping the peer model degrades to queued with zero POSTs', async () => {
-    const { root, restore } = await freshRoot('mesh-omit-mutant-');
+  it('negative control: removing the peer model queues with zero POSTs', async () => {
+    const { root, restore } = await freshRoot('mesh-omit-control-');
     const { atomicUpdateRegistry } = await import('../src/registry.js');
     await atomicUpdateRegistry((reg: unknown) => {
       (reg as Record<string, unknown>)['omit-peer'] = { sessionId: 'omit-peer', agent: 'peer-agent', updatedAt: Date.now(), serveUrl: 'http://127.0.0.1:4096' };

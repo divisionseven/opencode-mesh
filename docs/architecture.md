@@ -10,45 +10,50 @@ integration harness in `scripts/verify-mesh-harness.sh`.
 Newcomer flow lives in [getting-started.md](getting-started.md). Facts
 below link their canonical homes instead of copying them.
 
-| File                      | Role                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `plugin/opencode-mesh.ts` | Entry. Wires tools, heartbeat, claimer, and dispose.                                                    |
-| `bin/cli.js`              | Facade. Dispatches verbs to `dist/` owners; full verbs in [cli.md](cli.md).                             |
-| `src/registry.ts`         | `atomicUpdateRegistry` is the single writer; shapes in [schema.md](schema.md#registry-schema).          |
-| `src/outbox.ts`           | Durable queue; shapes in [schema.md](schema.md#outbox-schema).                                          |
-| `src/discovery.ts`        | Existence join behind `mesh_peers`.                                                                     |
-| `src/tools/mesh_send.ts`  | Direct-vs-claim router; paths in [transport.md](transport.md#mesh-delivery).                            |
-| `src/tools/mesh_peers.ts` | Ranked union display.                                                                                   |
-| `src/constants.ts`        | Single source for numeric bounds; values in [configuration.md](configuration.md#environment-variables). |
+| File                         | Role                                                                                                                                          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugin/opencode-mesh.ts`    | V1 entry. Wires tools, heartbeat, claimer, and dispose.                                                                                       |
+| `plugin/opencode-mesh-v2.ts` | V2 entry. Registers tools through transforms, learns identity from events plus session reads, arms shared timers once, owns restart adoption. |
+| `bin/cli.js`                 | Facade. Dispatches verbs to `dist/` owners; full verbs in [cli.md](cli.md).                                                                   |
+| `src/registry.ts`            | `atomicUpdateRegistry` is the single writer; shapes in [schema.md](schema.md#registry-schema).                                                |
+| `src/outbox.ts`              | Durable queue; shapes in [schema.md](schema.md#outbox-schema).                                                                                |
+| `src/discovery.ts`           | Existence join behind `mesh_peers`.                                                                                                           |
+| `src/tools/mesh_send.ts`     | Direct-vs-claim router; paths in [transport.md](transport.md#mesh-delivery).                                                                  |
+| `src/tools/mesh_peers.ts`    | Ranked union display.                                                                                                                         |
+| `src/constants.ts`           | Single source for numeric bounds; values in [configuration.md](configuration.md#environment-variables).                                       |
 
 <details><summary><strong>Full Module Map</strong></summary>
 
 ### Core Modules (`src/`)
 
-| File                            | Role                                                                                                                                                                             |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `identity.ts`                   | Single owner for identity resolution and title gating. `resolveIdentity` enriches agent+title+directory atomically. `isGenericTitle` mirrors the host's default-title predicate. |
-| `frontmatter.ts`                | Canonical mesh prefix. One template owns all four header shapes (normal, silent, quarantined, combined). Also owns quarantine tagging.                                           |
-| `errors.ts`                     | Typed `MeshError` with stable codes, censused from `src/errors.ts` at build time, HTTP-style status, and optional `didYouMean` suggestions.                                      |
-| `fsAtomic.ts`                   | Atomic writes (`tmp+rename+fsync+fsyncDir`) and the registry-only `withRegistryLock` (PID-stamped `O_EXCL` marker, stale-lock reap, EEXIST burst absorber).                      |
-| `xdg.ts`                        | State root resolution (`OPENCODE_MESH_ROOT` then `XDG_STATE_HOME` then `~/.local/state/opencode/mesh`). Owns registry, outbox, and legacy paths.                                 |
-| `attach.ts`                     | Attached-session oracle. Parses `ps` output to find live opencode processes. Per-process poller at 60s cadence. Focus is always unknown.                                         |
-| `claimer.ts`                    | Per-process outbox claimer. Polls every 2s, claims own session rows, injects through the local client, honors Runner busy retry.                                                 |
-| `wake.ts`                       | Wake-vs-silent resolution. Global `MESH_WAKE=0` first, then per-message `silent` or legacy `noReply`. Both inject paths resolve through this module.                             |
-| `expiry.ts`                     | Per-type TTL resolution with five-step precedence: attached-exempt, busy-exempt, override, type-default, dampening-hold.                                                         |
-| `lastAction.ts`                 | Last-action tracker. Stamps tool use, session events, and message legs. Backward-jump clamp, forward-jump dampening.                                                             |
-| `gc.ts`                         | Garbage collection. Registry stale pruning, outbox TTL drain, legacy inbox cleanup (sunset 0.3.0). Uses `trash` for user-data deletes.                                           |
-| `enumerate.ts`                  | Bounded local server enumeration. Probes extra ports from `MESH_ENUM_PORTS` for multi-instance discovery.                                                                        |
-| `serverAuth.ts`                 | Server auth header. Env `Basic` identical to the host; Keychain behind the exact opt-in flag, with an async mirror. |
-| `serverAuthKeychainProvider.ts` | Opt-in Keychain password provider. `/usr/bin/security` first, `secret-tool` fallback on Linux. 5m cache. Only reached behind `OPENCODE_MESH_KEYCHAIN_PROVIDER=1`. |
-| `version.ts`                    | Package version constant.                                                                                                                                                        |
+| File                            | Role                                                                                                                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `identity.ts`                   | Single owner for identity resolution and title gating. `resolveIdentity` enriches agent+title+directory atomically. `isGenericTitle` mirrors the host's default-title predicate.              |
+| `frontmatter.ts`                | Canonical mesh prefix. One template owns all four header shapes (normal, silent, quarantined, combined). Also owns quarantine tagging.                                                        |
+| `errors.ts`                     | Typed `MeshError` with stable codes, censused from `src/errors.ts` at build time, HTTP-style status, and optional `didYouMean` suggestions.                                                   |
+| `fsAtomic.ts`                   | Atomic writes (`tmp+rename+fsync+fsyncDir`) and the registry-only `withRegistryLock` (PID-stamped `O_EXCL` marker, stale-lock reap, EEXIST burst absorber).                                   |
+| `xdg.ts`                        | State root resolution (`OPENCODE_MESH_ROOT` then `XDG_STATE_HOME` then `~/.local/state/opencode/mesh`). Owns registry, outbox, and legacy paths.                                              |
+| `attach.ts`                     | Attached-session oracle. Parses `ps` output to find live opencode processes. Per-process poller at 60s cadence. Focus is always unknown.                                                      |
+| `claimer.ts`                    | Per-process outbox claimer. Polls every 2s, claims own session rows, injects through the local client, honors Runner busy retry. V2 setups inject through user admission with no live client. |
+| `v2routes.ts`                   | V2 HTTP legs. Active view, session locate, and user-admission POST under `/api`, V1 shape first.                                                                                              |
+| `adopt.ts`                      | Restart adoption. Rebuilds ownership from database recency at setup and on the shared tick.                                                                                                   |
+| `wake.ts`                       | Wake-vs-silent resolution. Global `MESH_WAKE=0` first, then per-message `silent` or legacy `noReply`. Both inject paths resolve through this module.                                          |
+| `expiry.ts`                     | Per-type TTL resolution with five-step precedence: attached-exempt, busy-exempt, override, type-default, dampening-hold.                                                                      |
+| `lastAction.ts`                 | Last-action tracker. Stamps tool use, session events, and message legs. Backward-jump clamp, forward-jump dampening.                                                                          |
+| `gc.ts`                         | Garbage collection. Registry stale pruning, outbox TTL drain, legacy inbox cleanup (sunset 0.3.0). Uses `trash` for user-data deletes.                                                        |
+| `enumerate.ts`                  | Bounded local server enumeration. Probes extra ports from `MESH_ENUM_PORTS` for multi-instance discovery.                                                                                     |
+| `serverAuth.ts`                 | Server auth header. Env `Basic` identical to the host; Keychain behind the exact opt-in flag, with an async mirror.                                                                           |
+| `serverAuthKeychainProvider.ts` | Opt-in Keychain password provider. `/usr/bin/security` first, `secret-tool` fallback on Linux. 5m cache. Only reached behind `OPENCODE_MESH_KEYCHAIN_PROVIDER=1`.                             |
+| `version.ts`                    | Package version constant.                                                                                                                                                                     |
 
 ### Tool Definitions (`src/tools/`)
 
-| File               | Role                                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| `index.ts`         | Barrel re-exports. Single import path for plugin and CLI.                                               |
-| `mesh_register.ts` | Upsert-only registration. Generic-title guard. Returns registry claims snapshot, not the display union. |
+| File                 | Role                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| `index.ts`           | Barrel re-exports. Single import path for plugin and CLI.                                               |
+| `mesh_register.ts`   | Upsert-only registration. Generic-title guard. Returns registry claims snapshot, not the display union. |
+| `mesh_send.core.ts`  | Host-free send executor shared by both entries. V1 legs first, V2 fallback, same miss vocabulary.       |
+| `mesh_peers.core.ts` | Host-free peers executor shared by both entries. Ranked union display plus receipt lookup.              |
 
 ### Installer (`src/install/`)
 
@@ -64,7 +69,8 @@ below link their canonical homes instead of copying them.
 
 `mesh_send` routes each target on loopback reachability. When the
 target server answers, the message POSTs direct and the receipt reads
-`via: "admitted"`. Otherwise it enqueues one canonical row for the
+`via: "admitted"`: V1 posts to `prompt_async` for a 204, V2 posts user
+admission to `/api/session/:sessionID/prompt` for a 2xx. Otherwise it enqueues one canonical row for the
 target claimer, and the receipt reads `via: "queued"` with a tracking
 id. Registry-carried addresses are never dialed; only the loopback pin
 is wired. The wire carries the receiver agent as observed with no
@@ -77,7 +83,8 @@ leg or `release` for redelivery on the claim leg. Paths and
 receipts live in [Mesh Delivery](transport.md#mesh-delivery).
 
 The claimer polls for rows owned by its own sessions and injects each
-through `promptAsync`, byte-identical to typed input. Success acks the
+through the local client (`promptAsync` on V1, user admission on V2),
+byte-identical to typed input. Success acks the
 row and failure releases it for redelivery, while `requeueStale` frees
 crashed claims and `collectOutbox` prunes past TTL with a dead-letter
 audit. Messages never touch disk as files. Row shapes live in
@@ -110,8 +117,10 @@ the send with `BROADCAST_DISABLED` before fan-out, and the top-level
 presence and returns the registry claims snapshot, never the display
 union.
 
-Discovery joins three legs: `opencode.db` read-only existence as ground
-truth, the registry as freshness overlay, and live confirmation
+Discovery joins three legs: the OpenCode database read-only existence as
+ground truth (`session` plus `session_v2` tables; V2 hosts persist live
+sessions in `session_v2` only), the registry as freshness overlay, and live
+confirmation
 ([discovery join](../CONTEXT.md)). Every id carries exactly one
 `liveSource` badge: status, heartbeat-recent, db-truth, or stale. An
 empty view means unknown, and a null or ambiguous view deletes zero
@@ -169,16 +178,28 @@ When the host loads the plugin, the following happens in order:
 
 8. **Dispose path.** On shutdown: clears heartbeat and claimer timers, stops the attach poller, releases owned unacked claims, and deletes own `seenSessions` IDs from the registry (past grace, attached-exempt).
 
-The plugin never starts a file poll for delivery. Messages arrive either through the direct `prompt_async` POST or through the outbox claimer, both of which piggyback on the host's existing server.
+## V2 bootstrap differences
+
+The V2 entry (`plugin/opencode-mesh-v2.ts`) defines one plugin id with a
+`setup` context instead of a plugin function. Tools register through
+synchronous `ctx.tool.transform` editors; presence learns identity from
+`session.created` data plus `session.get` reads with the instance directory
+as fallback. The first setup arms the shared heartbeat tick, the claimer
+with a live user-admission handle, and the attach poller, then adopts
+database-fresh sessions so a restart re-owns live rows with no manual
+touch. Cleanup aborts the event subscription and evicts only own ids past
+grace, attached-exempt.
+
+The plugin never starts a file poll for delivery. Messages arrive either through the direct POST (V1 `prompt_async`, V2 user admission) or through the outbox claimer, both of which piggyback on the host's existing server.
 
 ## Reference
 
 ### Auth Modes
 
-| Mode             | Trigger                             | Mechanism                                                                              |
-| ---------------- | ----------------------------------- | -------------------------------------------------------------------------------------- |
-| `none`           | `OPENCODE_SERVER_PASSWORD` unset    | No `Authorization` header sent                                                         |
-| `env`            | `OPENCODE_SERVER_PASSWORD` set      | `Basic base64(opencode:password)`, username overridable via `OPENCODE_SERVER_USERNAME` |
+| Mode             | Trigger                             | Mechanism                                                                                                               |
+| ---------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `none`           | `OPENCODE_SERVER_PASSWORD` unset    | No `Authorization` header sent                                                                                          |
+| `env`            | `OPENCODE_SERVER_PASSWORD` set      | `Basic base64(opencode:password)`, username overridable via `OPENCODE_SERVER_USERNAME`                                  |
 | `keychain-optin` | `OPENCODE_MESH_KEYCHAIN_PROVIDER=1` | Reads Keychain via `/usr/bin/security` with `secret-tool` fallback on Linux, 5m cache, only reached when `env` is unset |
 
 `status --json` reports `port.auth` as one of these three values.

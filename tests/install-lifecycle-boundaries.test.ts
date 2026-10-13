@@ -36,7 +36,7 @@ function runCli(args: string[], env?: Record<string, string>): { stdout: string;
   return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", status: r.status };
 }
 
-describe("install-lifecycle — edge plus mutant-proved gates", () => {
+describe("install-lifecycle: edge plus negative-control checks", () => {
   // ------------------------------------------------------------------
   // install: idempotent positive + negative + edge
   // ------------------------------------------------------------------
@@ -47,10 +47,11 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
     expect(r1.changed).toBe(false); // raw already canonical -> first is already noop
     expect(r2.changed).toBe(false);
     expect(r2.text).toBe(raw);
-    // mutant: if normalize missed ./plugin/opencode-mesh.ts -> canonical would not dedupe and second write would occur
+    // Negative control: if normalize missed ./plugin/opencode-mesh.ts then
+    // canonical form would not dedupe and a second write would occur
     const raw2 = `{"plugin":["./plugin/opencode-mesh.ts"]}`;
     const m1 = editPluginArrayText(raw2, "opencode-mesh", "add");
-    expect(m1.changed).toBe(false); // mutant JSON.parse->stringify would have considered it changed
+    expect(m1.changed).toBe(false); // a parse-to-stringify rewrite would report a change here
   });
 
   it("install idempotent negative: fresh file requires write, second is noop", () => {
@@ -380,7 +381,7 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
   });
 
   // ------------------------------------------------------------------
-  // HELP_WITHOUT_DIST positive + mutant
+  // HELP_WITHOUT_DIST positive plus negative control
   // ------------------------------------------------------------------
   // HELP_WITHOUT_DIST positive test removed: AGENTS.md bans source-text grep/count assertions from vitest
 
@@ -400,7 +401,7 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
   // HELP_WITHOUT_DIST wall test removed: AGENTS.md bans timing wall assertions from vitest
 
   // ------------------------------------------------------------------
-  // preserveExistingMode 0644 positive + mutant
+  // preserveExistingMode 0644 positive plus negative control
   // ------------------------------------------------------------------
   it("preserveExistingMode 0644 positive: second write without mode preserves 0644", async () => {
     const root = await mkdtemp(join(tmpdir(), "preserve-edge-"));
@@ -435,15 +436,15 @@ describe("install-lifecycle — edge plus mutant-proved gates", () => {
     await safeRm(root);
   });
 
-  it("preserveExistingMode mutant: blind 0600 would fail preservation (proved via stat)", async () => {
+  it("preserveExistingMode control: fixed 0600 fails preservation (stat proved)", async () => {
     // This test proves the fix: if writeAtomic always used 0600, the first assertion would fail.
     // Implementation preserves 0644, not blind 0600.
-    const root = await mkdtemp(join(tmpdir(), "preserve-mutant-"));
+    const root = await mkdtemp(join(tmpdir(), "preserve-control-"));
     const target = join(root, "opencode.json");
     await writeAtomic(target, "{}", { mode: 0o644 });
     await writeAtomic(target, "{}"); // implicit -> must be 0644 not 0600
     const s = await stat(target);
-    // If mutant blind 0600, this would be 0600 and fail
+    // If the write used a fixed 0600 mode, this would read 0600 and fail
     expect(s.mode & 0o777).toBe(0o644);
     await safeRm(root);
   });

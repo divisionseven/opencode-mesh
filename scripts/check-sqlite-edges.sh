@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="${1:-${CHECK_ROOT:-.}}"
 cd "$ROOT"
 bad=0
-for f in src/outbox.ts src/discovery.ts src/tools/mesh_send.ts src/tools/mesh_peers.ts plugin/opencode-mesh.ts; do
+for f in src/outbox.ts src/discovery.ts src/tools/mesh_send.ts src/tools/mesh_peers.ts src/tools/mesh_send.core.ts src/tools/mesh_peers.core.ts src/tools/mesh_register.core.ts src/v2singleflight.ts plugin/opencode-mesh.ts plugin/opencode-mesh-v2.ts; do
   [ -f "$f" ] || continue
   edges=$(grep -n 'from "node:sqlite"' "$f" 2>/dev/null | grep -v "import type" || true)
   if [ -n "$edges" ]; then echo "SQLITE_EDGES_FAIL: static edge in $f:" >&2; printf '%s\n' "$edges" >&2; bad=1; fi
