@@ -17,5 +17,6 @@ jobs:
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
-          allow-licenses: MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, MPL-2.0, 0BSD, BlueOak-1.0.0, CC0-1.0, CC-BY-3.0
+          # bowser (via @opencode/ai aws chain) reports MIT AND MITNFA upstream.
+          allow-licenses: MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, MPL-2.0, 0BSD, BlueOak-1.0.0, CC0-1.0, CC-BY-3.0, MITNFA
           comment-summary-in-pr: always
