@@ -218,8 +218,11 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     prefixed: string,
     viaAuth: string | undefined,
     wakeOpts?: { silent?: boolean; noReply?: boolean },
+    port?: number,
   ): Promise<string | null> => {
-    const located = await locateSession(peerId, undefined, viaAuth);
+    // Why: the caller already resolved the live port, so probing that port
+    // first keeps the v2 admit on one horizontal instead of rescanning pins.
+    const located = await locateSession(peerId, port !== undefined ? [port] : undefined, viaAuth);
     if (!located || located.kind !== "v2") return null;
     const triple = v2RowToTriple(located.row);
     const stored = (reg as Record<string, RegEntry>)[peerId] ?? {};
@@ -295,7 +298,7 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     ).receiver;
     // Identity degrade: unresolvable triple tries the v2 leg (v2 rows carry
     // agent plus model where the registry learned neither), then queues.
-    if (!receiver) return sendV2Direct(peerId, prefixed, viaAuth, wakeOpts);
+    if (!receiver) return sendV2Direct(peerId, prefixed, viaAuth, wakeOpts, livePort);
     const parts = [{ type: "text" as const, text: prefixed }];
     // Why: no inline send-path sleeps — jitter lives inside queue policy
     // (claimer busy-wait). Direct admit never waits on peer state.
@@ -319,9 +322,16 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     } catch (err) {
       // Transport failure on the v1 leg tries v2 before queuing; a v2 admit
       // beats a queued row, otherwise the original fault keeps its contract.
-      const admitted = await sendV2Direct(peerId, prefixed, viaAuth, wakeOpts);
+      const admitted = await sendV2Direct(peerId, prefixed, viaAuth, wakeOpts, livePort);
       if (admitted !== null) return admitted;
       throw err;
+    }
+    // Why: a v2 host answers the v1 prompt_async path with 405 and the SPA
+    // shell never 204s, so the status itself names the horizontal to retry.
+    if (res.status === 405) {
+      const admitted = await sendV2Direct(peerId, prefixed, viaAuth, wakeOpts, livePort);
+      if (admitted !== null) return admitted;
+      throw new MeshError("SERVER_UNAVAILABLE", `promptAsync failed ${res.status}`, { status: res.status });
     }
     if (res.status === 404) {
       const peers = buildDidYouMean(reg);
