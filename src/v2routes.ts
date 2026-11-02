@@ -9,6 +9,7 @@
 // cores are the only callers.
 import { POST_TIMEOUT_MS, ROUTE_PROBE_TIMEOUT_MS } from "./constants.js";
 import { enumPorts } from "./enumerate.js";
+import { withDiscoveredPorts } from "./serviceDiscovery.js";
 import { assertBodySendable } from "./outbox.js";
 import { fetchSessionStatusMap, unwrapStatusMap } from "./registry.js";
 import { getServerAuthHeaderSync } from "./serverAuth.js";
@@ -39,6 +40,15 @@ export function v2DeliveryForWake(opts?: {
 export function portsToProbe(explicit?: number[]): number[] {
   if (explicit && explicit.length > 0) return [...new Set(explicit)];
   return enumPorts();
+}
+
+/**
+ * Async portsToProbe: folds in the host service record so an ephemeral
+ * service port leads the probe list. Every caller on this path is already
+ * async, and with no record the sync list is returned untouched.
+ */
+export async function portsToProbeAsync(explicit?: number[]): Promise<number[]> {
+  return withDiscoveredPorts(portsToProbe(explicit));
 }
 
 /** Loopback base for one port; registry addresses are never dialed. */
@@ -77,7 +87,7 @@ export async function activeUnion(
   const viaAuth = auth ?? getServerAuthHeaderSync();
   const withV1 = opts?.v1 ?? true;
   const merged: Record<string, { type: string }> = {};
-  for (const port of portsToProbe(ports)) {
+  for (const port of await portsToProbeAsync(ports)) {
     const view =
       (withV1 ? await fetchSessionStatusMap(port) : null) ??
       (await fetchV2Active(port, viaAuth));
@@ -127,7 +137,7 @@ export async function locateSession(
 ): Promise<LocatedSession | null> {
   const viaAuth = auth ?? getServerAuthHeaderSync();
   const headers = authHeaders(viaAuth);
-  for (const port of portsToProbe(ports)) {
+  for (const port of await portsToProbeAsync(ports)) {
     try {
       const res = await fetch(`${baseFor(port)}/session/${sessionId}`, {
         headers,

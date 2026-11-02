@@ -144,6 +144,44 @@ describe('v2 send legs', () => {
     restore();
   });
 
+  it('a 405 from the v1 prompt_async path admits through the v2 prompt', async () => {
+    const { root, restore } = await freshRoot('v2send-405-');
+    process.env.MESH_ENUM_PORTS = '4501';
+    // Live row carries agent plus model, so the v1 leg is attempted first and
+    // only its 405 (a v2 host refusing the v1 path) redirects to the v2 leg.
+    await seedPeer('v2-peer', { agent: 'alfred', model: 'acme/reasoner' });
+    const calls: string[] = [];
+    const base = stubV2Alive([]);
+    globalThis.fetch = (async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      calls.push(`${(init as { method?: string })?.method ?? 'GET'} ${u}`);
+      if (u.includes('/session/v2-peer/prompt_async')) {
+        return new Response('', { status: 405 });
+      }
+      return (base as (u: unknown, i?: unknown) => Promise<Response>)(url, init);
+    }) as unknown as typeof fetch;
+    const { mesh_send } = await import('../src/tools/mesh_send.js');
+    const out = JSON.parse(
+      String(
+        (
+          await (mesh_send.execute as any)(
+            { target: 'v2-peer', text: 'hello v2 host' },
+            { sessionID: 'v2-caller', agent: 'manager' },
+          )
+        ).output,
+      ),
+    ) as { ok: boolean; via: string; id: string };
+    expect(out.ok).toBe(true);
+    expect(out.via).toBe('admitted');
+    expect(out.id).toBe('inbox_9');
+    expect(calls.some((c) => c.includes('prompt_async'))).toBe(true);
+    expect(
+      calls.filter((c) => c === 'POST http://127.0.0.1:4501/api/session/v2-peer/prompt'),
+    ).toHaveLength(1);
+    await safeRm(root);
+    restore();
+  });
+
   it('silent messages ride user prompt with queue delivery', async () => {
     const { root, restore } = await freshRoot('v2send-quiet-');
     process.env.MESH_ENUM_PORTS = '4501';
@@ -201,8 +239,7 @@ describe('v2 send legs', () => {
     restore();
   });
 
-  it('v2 prompt miss stays loud with peer hints', async () => {
-    const { root, restore } = await freshRoot('v2send-miss-');
+  it('v2 prompt miss stays loud with peer hints', async () => {    const { root, restore } = await freshRoot('v2send-miss-');
     process.env.MESH_ENUM_PORTS = '4501';
     await seedPeer('v2-peer', { agent: 'alfred' });
     globalThis.fetch = stubV2Alive([], 404);
