@@ -53,6 +53,7 @@ import {
 } from "../src/v2singleflight.js";
 import { v2ModelString } from "../src/v2routes.js";
 import { adoptDbSessions } from "../src/adopt.js";
+import { readDbSessions } from "../src/discovery.js";
 
 /** Stable V2 plugin id (also the status/diagnostics identity). */
 const MESH_V2_PLUGIN_ID = "opencode-mesh";
@@ -158,6 +159,13 @@ const v2SeenAt = new Map<string, number>();
 
 /** In-process v2 inject client for the claimer (first setup owns it). */
 let v2ClaimClient: V2InjectClient | null = null;
+
+/**
+ * Refresh hook for the claim-leg target snapshot (first setup owns it). The
+ * shared tick calls it so a session created since boot becomes claimable
+ * without a restart; null when no v2 setup armed the claimer.
+ */
+let v2ClaimTargetsRefresh: (() => void) | null = null;
 
 /**
  * Best-effort presence touch for one session id: guard-merge plus registry
@@ -536,8 +544,41 @@ export default Plugin.define({
             delivery: input.delivery,
           }) as Promise<unknown>,
       };
+      // Addressable targets for the claim leg. The v2 daemon owns this whole
+      // process, so every session the host can reach is claimable here: own
+      // ids, then locally known rows, then every database row. Without this
+      // widening a background service starts with an empty owned set and no
+      // queued row is ever claimed, which is a silent permanent stall.
+      const claimTargetsV2 = async (): Promise<string[]> => {
+        const out = new Set<string>(v2OwnedIds());
+        try {
+          const reg = (await readRegistry()) as Record<string, unknown>;
+          for (const id of Object.keys(reg)) out.add(id);
+        } catch {}
+        try {
+          const rows = await readDbSessions();
+          for (const id of Object.keys(rows)) out.add(id);
+        } catch {}
+        return [...out];
+      };
+      // Synchronous snapshot refreshed by the shared tick: the claim poll must
+      // not await filesystem or SQLite reads on every 2s interval.
+      let claimableIds: string[] = [...v2OwnedIds()];
+      void claimTargetsV2()
+        .then((ids) => {
+          claimableIds = ids;
+        })
+        .catch(() => {});
+      v2ClaimTargetsRefresh = () => {
+        void claimTargetsV2()
+          .then((ids) => {
+            claimableIds = ids;
+          })
+          .catch(() => {});
+      };
       configureClaimer({
         getOwnIds: () => v2OwnedIds(),
+        getClaimTargets: () => claimableIds,
         getClient: () => null,
         getV2Client: () => v2ClaimClient,
         getRegistry: async () =>
@@ -557,6 +598,9 @@ export default Plugin.define({
       } catch {}
       armV2SharedTimer(() => {
         void runV2SharedTick();
+        // Keep the claim-leg target snapshot fresh: sessions created after
+        // boot must become claimable without a daemon restart.
+        v2ClaimTargetsRefresh?.();
       });
     }
 
@@ -573,6 +617,7 @@ export default Plugin.define({
         clearClaimerTimer();
         stopAttachPoller();
         v2ClaimClient = null;
+        v2ClaimTargetsRefresh = null;
         try {
           await releaseClaimerOwner();
         } catch {}

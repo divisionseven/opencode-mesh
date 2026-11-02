@@ -11,7 +11,9 @@ import { readRegistry } from "../registry.js";
 import { getServerAuthHeaderSync } from "../serverAuth.js";
 import {
   activeUnion,
+  fetchV2Active,
   locateSession,
+  portsToProbeAsync,
   postV2Prompt,
   v2RowToTriple,
 } from "../v2routes.js";
@@ -80,29 +82,42 @@ function isBroadcastEnabled(): boolean {
 /**
  * Loopback pin: dials only 127.0.0.1 probed ports; registry addresses never
  * dialed. Probe failure claims instead of throwing, so down servers queue.
- * v1 status first (unchanged single-port contract), then the v1-plus-v2
- * union across probed ports (v2 servers answer /api/session/active only).
+ * v1 status first on the pinned port, then the discovery-led union (a v2
+ * service host binds an ephemeral port, so the pin alone always misses).
  */
-async function resolveRoute(viaAuth: string | undefined): Promise<"direct" | "claim"> {
+async function resolveRoute(viaAuth: string | undefined): Promise<{ route: "direct" | "claim"; port?: number }> {
   try {
     const headers: Record<string, string> = {};
     if (viaAuth) headers.Authorization = viaAuth;
     const res = await fetch(`http://127.0.0.1:${OPENCODE_PORT}/session/status`, { headers, signal: AbortSignal.timeout(ROUTE_PROBE_TIMEOUT_MS) });
-    if (res.ok) return "direct";
+    if (res.ok) return { route: "direct", port: OPENCODE_PORT };
     // Why: degraded leg — any probe failure (timeout, refused, non-ok) claims
     // instead of throwing, so a down server queues instead of dropping.
   } catch {}
   try {
     // v2-only union: the v1 pin above just missed, so probing it again
     // would double the send-path status touches the broadcast gate pins.
-    if (await activeUnion(undefined, viaAuth, { v1: false })) return "direct";
+    const discovered = await portsToProbeAsync();
+    for (const port of discovered) {
+      if (port === OPENCODE_PORT) continue;
+      try {
+        if (await fetchV2Active(port, viaAuth)) return { route: "direct", port };
+      } catch {}
+    }
+    if (!discovered.includes(OPENCODE_PORT) && (await activeUnion(undefined, viaAuth, { v1: false }))) {
+      return { route: "direct" };
+    }
   } catch {}
-  return "claim";
+  return { route: "claim" };
 }
 
-/** Loopback POST base; never a registry address. */
-function resolvePostBase(): string {
-  return `http://127.0.0.1:${OPENCODE_PORT}`;
+/**
+ * Loopback POST base for one port; never a registry address. The send leg
+ * resolves the live port first (service record leads, then the pin) so a
+ * direct admit reaches an ephemeral service host instead of queuing.
+ */
+function resolvePostBase(port: number = OPENCODE_PORT): string {
+  return `http://127.0.0.1:${port}`;
 }
 
 /**
@@ -115,11 +130,15 @@ export type DirectRowOutcome =
 /**
  * Loopback GET under route-probe conventions; miss reads fallthrough, never throws.
  */
-export async function fetchDirectRow(peerId: string, viaAuth: string | undefined): Promise<DirectRowOutcome> {
+export async function fetchDirectRow(
+  peerId: string,
+  viaAuth: string | undefined,
+  port: number = OPENCODE_PORT,
+): Promise<DirectRowOutcome> {
   try {
     const headers: Record<string, string> = {};
     if (viaAuth) headers.Authorization = viaAuth;
-    const res = await fetch(`${resolvePostBase()}/session/${peerId}`, {
+    const res = await fetch(`${resolvePostBase(port)}/session/${peerId}`, {
       headers,
       signal: AbortSignal.timeout(ROUTE_PROBE_TIMEOUT_MS),
     });
@@ -246,7 +265,7 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     return null;
   };
 
-  const sendDirect = async (peerId: string, from: string, msgText: string, viaAuth: string | undefined, dir: string | undefined, wakeOpts?: { silent?: boolean; noReply?: boolean }): Promise<string | null> => {
+  const sendDirect = async (peerId: string, from: string, msgText: string, viaAuth: string | undefined, dir: string | undefined, wakeOpts?: { silent?: boolean; noReply?: boolean }, port?: number): Promise<string | null> => {
     // Lazy outbox import at call time (module carries zero static sqlite edges,
     // so the direct TCP path never touches storage): always-branded wire ID rule.
     const { newMessageId } = await import("../outbox.js");
@@ -264,7 +283,8 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     assertSendable(msgText, meshPrefixLength(fromAgent, from, verified, silentBit));
     // Direct-leg live read feeds resolver live layer; miss falls through to DB.
     // Unresolvable rows queue for claim leg with full-trail deferred lines.
-    const direct = await fetchDirectRow(peerId, viaAuth);
+    const livePort = port ?? OPENCODE_PORT;
+    const direct = await fetchDirectRow(peerId, viaAuth, livePort);
     const directRow = direct.ok ? direct.row : null;
     // Directory fence: wire uses target scope, never sender cwd; unknown falls back.
     const peerEntry = (reg as Record<string, { directory?: string; cwd?: string }>)[peerId];
@@ -282,7 +302,7 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (viaAuth) headers.Authorization = viaAuth;
     if (directory) headers["x-opencode-directory"] = encodeURIComponent(directory);
-    const url = `${resolvePostBase()}/session/${peerId}/prompt_async?directory=${encodeURIComponent(directory)}`;
+    const url = `${resolvePostBase(livePort)}/session/${peerId}/prompt_async?directory=${encodeURIComponent(directory)}`;
     // Always-branded messageID: 204 carries no body, so wire ID is by construction.
     const body = JSON.stringify({
       agent: receiver.agent,
@@ -333,13 +353,14 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     viaAuth: string | undefined,
     dir: string | undefined,
     route: "direct" | "claim",
-    fanoutId?: string
+    fanoutId?: string,
+    port?: number,
   ): Promise<{ id: string; via: string }> => {
     sanitizeSessionId(peerId);
     sanitizeSessionId(from);
     if (route === "direct") {
       try {
-        const id = await sendDirect(peerId, from, msgText, viaAuth, dir, { silent, noReply });
+        const id = await sendDirect(peerId, from, msgText, viaAuth, dir, { silent, noReply }, port);
         if (id !== null) return { id, via: "admitted" };
         // Identity degrade: unresolvable triple queues for claimer with live client.
       } catch (err) {
@@ -360,11 +381,13 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
     if (peerIds.length === 0) return { output: JSON.stringify({ broadcast: true, peers: 0, ok: 0, via: "admitted" }) };
     const { newMessageId: newFanoutId } = await import("../outbox.js");
     const sharedFanoutId = newFanoutId();
-    const sharedRoute = await resolveRoute(auth);
+    const resolvedShared = await resolveRoute(auth);
+    const sharedRoute = resolvedShared.route;
+    const sharedLivePort = resolvedShared.port;
     const results: Array<{ peerId: string; ok: boolean; via?: string; id?: string; error?: string; code?: string; status?: number; didYouMean?: string[] }> = [];
     for (const pid of peerIds) {
       try {
-        const r = await sendIdentical(pid, caller, text, auth, directoryFromCtx, sharedRoute, sharedFanoutId);
+        const r = await sendIdentical(pid, caller, text, auth, directoryFromCtx, sharedRoute, sharedFanoutId, sharedLivePort);
         results.push({ peerId: pid, ok: true, via: r.via, id: r.id });
       } catch (e) {
         const code = (e as { code?: string })?.code ?? (e instanceof MeshError ? e.code : undefined);
@@ -394,7 +417,8 @@ export async function executeMeshSend(args: MeshSendArgs, ctx: MeshToolContext):
         throw new MeshError("PEER_NOT_FOUND", `peer not found: ${target}`, { didYouMean: peers });
       } else throw new MeshError("PEER_NOT_FOUND", `peer not found: ${target}`, { didYouMean: [] });
     }
-    const r = await sendIdentical(resolved, caller, text, auth, directoryFromCtx, await resolveRoute(auth));
+    const uncast = await resolveRoute(auth);
+    const r = await sendIdentical(resolved, caller, text, auth, directoryFromCtx, uncast.route, undefined, uncast.port);
     // Why: honest vocabulary — admitted (204) vs queued (row exists); sent:true-on-204 is forbidden, verify via receipt-by-id.
     const entry = (reg as Record<string, { title?: string; description?: string; summary?: string }>)[resolved];
     const title = entry?.title ?? entry?.description ?? entry?.summary ?? resolved.slice(0, 8);

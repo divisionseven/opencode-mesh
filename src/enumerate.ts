@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { ONE_MB, OPENCODE_PORT } from "./constants.js";
 import { getServerAuthHeader } from "./serverAuth.js";
+import { withDiscoveredPorts } from "./serviceDiscovery.js";
 
 export const ENUM_MAX_PORTS = 8;
 export const ENUM_TIMEOUT_MS = 1000;
@@ -85,6 +86,8 @@ export async function probePort(port: number, timeoutMs: number = ENUM_TIMEOUT_M
 
 /** Enumerate bounded set concurrently; order follows input, no port-scan sprawl. */
 export async function enumerateServers(explicitPorts?: number[], timeoutMs: number = ENUM_TIMEOUT_MS): Promise<ServerSight[]> {
-  const ports = enumPorts(explicitPorts);
+  // Discovery folds into the async leg only: a host service record leads the
+  // probe list so an ephemeral service port is found without MESH_ENUM_PORTS.
+  const ports = await withDiscoveredPorts(enumPorts(explicitPorts));
   return Promise.all(ports.map((p) => probePort(p, timeoutMs)));
 }

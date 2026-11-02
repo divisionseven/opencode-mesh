@@ -19,6 +19,7 @@ import { appendDeliveryAudit, unwrapStatusMap } from "./registry.js";
 import type { OutboxFailReason } from "./outbox.js";
 import {
   locateSession,
+  portsToProbeAsync,
   postV2Prompt,
   v2RowToTriple,
 } from "./v2routes.js";
@@ -50,6 +51,12 @@ export interface ClaimerDeps {
   getRegistry: () => Promise<Record<string, { agent?: string; directory?: string; cwd?: string; model?: string }>>;
   /** v2 setups provide this; v1 setups leave it absent (clientless path). */
   getV2Client?: () => V2InjectClient | null;
+  /**
+   * Targets this process may claim for beyond its own ids. Absent keeps the
+   * historical exact-own-id contract; the v2 adapter supplies every id the
+   * host can address so a background service process never starves the queue.
+   */
+  getClaimTargets?: () => string[];
 }
 
 let deps: ClaimerDeps | null = null;
@@ -59,6 +66,22 @@ const claimerOwners = new Set<string>();
 /** Plugin init wires its session set plus live client plus registry read here. */
 export function configureClaimer(d: ClaimerDeps): void {
   deps = d;
+}
+
+/**
+ * Ids one poll may claim for: the process's own set first, then the
+ * adapter-supplied addressable targets. Falls back to own ids alone, so a
+ * v1 wiring or a throwing hook keeps the exact historical behavior.
+ */
+function claimTargets(d: ClaimerDeps, ownIds: string[]): string[] {
+  let extra: string[] = [];
+  try {
+    extra = d.getClaimTargets?.() ?? [];
+  } catch {
+    extra = [];
+  }
+  if (extra.length === 0) return ownIds;
+  return [...new Set([...ownIds, ...extra.filter((id) => typeof id === "string" && id.length > 0)])];
 }
 
 function claimerOwnerId(ownIds: string[]): string {
@@ -88,9 +111,17 @@ export async function pollClaimer(): Promise<void> {
   try {
     const d = deps;
     if (!d) return;
+    // Why: the owned set is seeded from the in-memory ids of sessions this
+    // process has touched, so a restarted or background service process owns
+    // nothing and every queued row for a live peer starves silently forever.
+    // A delivery attempt is already re-validated at send time, so claiming
+    // for any target the host can still address is safe (claims stay atomic).
+    // The widening is opt-out through the guard below; tests and pinned
+    // single-session callers keep the exact historical set.
     const ownIds = d.getOwnIds();
-    if (ownIds.length === 0) return;
-    const ownerId = claimerOwnerId(ownIds);
+    const claimIds = claimTargets(d, ownIds);
+    if (claimIds.length === 0) return;
+    const ownerId = claimerOwnerId(claimIds);
     claimerOwners.add(ownerId);
     const outbox = await import("./outbox.js");
     try {
@@ -107,7 +138,7 @@ export async function pollClaimer(): Promise<void> {
       silent?: number;
     }> = [];
     try {
-      rows = (await outbox.claim(ownIds, ownerId, 1)) as typeof rows;
+      rows = (await outbox.claim(claimIds, ownerId, 1)) as typeof rows;
     } catch {
       return;
     }
@@ -295,21 +326,33 @@ async function pollClientlessRow(
   const { reg, ownerId, clientShape, outbox } = ctx;
   let route: "direct" | "claim" = "claim";
   let probeStatus: number | undefined;
+  let livePort: number = OPENCODE_PORT;
   try {
     const auth = getServerAuthHeaderSync();
     const headers: Record<string, string> = {};
     if (auth) headers.Authorization = auth;
-    const res = await fetch(`http://127.0.0.1:${OPENCODE_PORT}/session/status`, {
-      headers,
-      signal: AbortSignal.timeout(ROUTE_PROBE_TIMEOUT_MS),
-    });
-    probeStatus = res.status;
-    if (res.ok) route = "direct";
+    // Discovery-led: a service host answers on its ephemeral port, not the pin.
+    for (const port of await portsToProbeAsync()) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${port}/session/status`, {
+          headers,
+          signal: AbortSignal.timeout(ROUTE_PROBE_TIMEOUT_MS),
+        });
+        probeStatus = res.status;
+        if (res.ok) {
+          route = "direct";
+          livePort = port;
+          break;
+        }
+      } catch {
+        route = "claim";
+      }
+    }
   } catch {
     route = "claim";
   }
   if (route === "direct") {
-    const delivered = await tryDirectFallback(row, ctx, { route, probeStatus });
+    const delivered = await tryDirectFallback(row, ctx, { route, probeStatus, port: livePort });
     if (delivered) return;
   }
   // v2 leg: a v2-hosted target admits here even with no live client anywhere.
@@ -343,7 +386,7 @@ async function pollClientlessRow(
 async function tryDirectFallback(
   row: { id: string; target_session: string; from_session: string; from_agent: string; text: string; attempts: number; silent?: number },
   ctx: ClientlessCtx,
-  routeInfo: { route: "direct" | "claim"; probeStatus?: number }
+  routeInfo: { route: "direct" | "claim"; probeStatus?: number; port?: number }
 ): Promise<boolean> {
   const { c, reg, ownerId, clientShape, outbox } = ctx;
   try {
@@ -383,7 +426,7 @@ async function tryDirectFallback(
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (auth) headers.Authorization = auth;
     if (directory) headers["x-opencode-directory"] = encodeURIComponent(directory);
-    const url = `http://127.0.0.1:${OPENCODE_PORT}/session/${row.target_session}/prompt_async?directory=${encodeURIComponent(directory)}`;
+    const url = `http://127.0.0.1:${routeInfo.port ?? OPENCODE_PORT}/session/${row.target_session}/prompt_async?directory=${encodeURIComponent(directory)}`;
     const body = JSON.stringify({
       agent: receiver.agent,
       parts: [{ type: "text", text: prefixed }],
